@@ -5,14 +5,17 @@ from __future__ import annotations
 import uuid
 import logging
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
 from app.models.sheet import Sheet
 from app.models.user import User
+from app.models.guest_project_access import GuestProjectAccess
+from app.models.event_log import EventLog
 from app.services.event_service import log_event
 from app.middleware.error_handler import AppException, NotFoundException
+from app.utils import storage
 
 logger = logging.getLogger(__name__)
 
@@ -141,3 +144,53 @@ async def update_project(
             payload=changes,
         )
     return project
+
+
+async def delete_project(
+    db: AsyncSession,
+    org_id: uuid.UUID,
+    project_id: uuid.UUID,
+    acting_user_id: uuid.UUID,
+) -> None:
+    """Permanently delete a project, its plans/sheets (DB cascade), guest access, and storage files."""
+    from app.services import plan_service
+
+    project = await get_project(db, org_id, project_id)
+    name = project.name
+
+    plans = await plan_service.list_project_plans(db, org_id, project_id)
+    sheets = await plan_service.list_project_sheets(db, org_id, project_id)
+
+    plan_paths = [p.storage_path for p in plans if p.storage_path]
+    thumb_paths = [s.thumbnail_path for s in sheets if s.thumbnail_path]
+
+    if plan_paths:
+        storage.remove_files(storage.PLANS_BUCKET, plan_paths)
+    if thumb_paths:
+        storage.remove_files(storage.THUMBNAILS_BUCKET, thumb_paths)
+
+    await db.execute(
+        delete(GuestProjectAccess).where(
+            GuestProjectAccess.org_id == org_id,
+            GuestProjectAccess.project_id == project_id,
+        )
+    )
+    await db.execute(
+        update(EventLog)
+        .where(EventLog.org_id == org_id, EventLog.project_id == project_id)
+        .values(project_id=None)
+    )
+
+    await log_event(
+        db,
+        org_id=org_id,
+        user_id=acting_user_id,
+        project_id=project.id,
+        event_type="project.deleted",
+        entity_type="project",
+        entity_id=project.id,
+        payload={"name": name},
+    )
+
+    await db.execute(delete(Project).where(Project.id == project_id, Project.org_id == org_id))
+    await db.flush()

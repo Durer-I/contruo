@@ -34,7 +34,8 @@ class Settings(BaseSettings):
     dodopayments_webhook_secret: str = ""
 
     # Redis / Celery
-    redis_url: str = "redis://localhost:6379/0"
+    # redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = 'redis://default:xi9rQA4Xu9pD9fcRvhsnb1RTlcewMFNg@redis-11849.c261.us-east-1-4.ec2.cloud.redislabs.com:11849'
 
     # Email
     email_provider: str = "resend"

@@ -12,7 +12,12 @@ import { AlertTriangle, Maximize2, Minus, Plus, StretchHorizontal } from "lucide
 import { Button } from "@/components/ui/button";
 import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { PlanDocumentUrlResponse, ProjectSearchResponse, SheetInfo } from "@/types/project";
+import type {
+  PlanDocumentUrlResponse,
+  PlanInfo,
+  ProjectSearchResponse,
+  SheetInfo,
+} from "@/types/project";
 import { useTopBarCenter } from "@/providers/top-bar-center-provider";
 
 import {
@@ -28,6 +33,10 @@ import { PlanSearchPanel } from "@/components/plan-viewer/plan-search-panel";
 interface PlanViewerWorkspaceProps {
   projectId: string;
   projectName: string;
+  plans: PlanInfo[];
+  activePlanId: string;
+  onActivePlanChange: (planId: string) => void;
+  /** All sheets in the project (filtered to `activePlanId` for the index + viewer). */
   sheets: SheetInfo[];
   onSheetsRefresh: () => Promise<void>;
   canEditMeasurements: boolean;
@@ -38,11 +47,15 @@ const PANEL_IDS = ["sheet-index", "viewer", "quantities"] as const;
 export function PlanViewerWorkspace({
   projectId,
   projectName,
+  plans,
+  activePlanId,
+  onActivePlanChange,
   sheets,
   onSheetsRefresh,
   canEditMeasurements,
 }: PlanViewerWorkspaceProps) {
   const canvasRef = useRef<PlanPdfCanvasHandle>(null);
+  const skipSheetResetOnPlanChangeRef = useRef(false);
   const { setCenter } = useTopBarCenter();
   const [userSheetId, setUserSheetId] = useState<string | null>(null);
   const [docBundle, setDocBundle] = useState<{ planId: string; url: string } | null>(null);
@@ -62,22 +75,36 @@ export function PlanViewerWorkspace({
   const [pageMatchCount, setPageMatchCount] = useState(0);
   const [localPageMatchIdx, setLocalPageMatchIdx] = useState(0);
 
-  const layoutId = `contruo-project-${projectId}`;
+  /** Bump version when default proportions change so users get the new baseline once. */
+  const layoutId = `contruo-plan-workspace-${projectId}-v3`;
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: layoutId,
     storage: typeof window !== "undefined" ? window.localStorage : undefined,
     panelIds: [...PANEL_IDS],
   });
 
+  const planSheets = useMemo(
+    () => sheets.filter((s) => s.plan_id === activePlanId),
+    [sheets, activePlanId]
+  );
+
+  useEffect(() => {
+    if (skipSheetResetOnPlanChangeRef.current) {
+      skipSheetResetOnPlanChangeRef.current = false;
+      return;
+    }
+    setUserSheetId(null);
+  }, [activePlanId]);
+
   const activeSheetId = useMemo(() => {
-    if (sheets.length === 0) return null;
-    if (userSheetId && sheets.some((s) => s.id === userSheetId)) return userSheetId;
-    return sheets[0].id;
-  }, [sheets, userSheetId]);
+    if (planSheets.length === 0) return null;
+    if (userSheetId && planSheets.some((s) => s.id === userSheetId)) return userSheetId;
+    return planSheets[0].id;
+  }, [planSheets, userSheetId]);
 
   const activeSheet = useMemo(
-    () => sheets.find((s) => s.id === activeSheetId) ?? null,
-    [sheets, activeSheetId]
+    () => planSheets.find((s) => s.id === activeSheetId) ?? null,
+    [planSheets, activeSheetId]
   );
 
   const planId = activeSheet?.plan_id ?? null;
@@ -271,13 +298,13 @@ export function PlanViewerWorkspace({
         canvasRef.current?.zoomOut();
       } else if (e.key === "[") {
         e.preventDefault();
-        const idx = sheets.findIndex((s) => s.id === activeSheetId);
-        if (idx > 0) setUserSheetId(sheets[idx - 1].id);
+        const idx = planSheets.findIndex((s) => s.id === activeSheetId);
+        if (idx > 0) setUserSheetId(planSheets[idx - 1].id);
       } else if (e.key === "]") {
         e.preventDefault();
-        const idx = sheets.findIndex((s) => s.id === activeSheetId);
-        if (idx >= 0 && idx < sheets.length - 1) {
-          setUserSheetId(sheets[idx + 1].id);
+        const idx = planSheets.findIndex((s) => s.id === activeSheetId);
+        if (idx >= 0 && idx < planSheets.length - 1) {
+          setUserSheetId(planSheets[idx + 1].id);
         }
       } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         const k = e.key.toLowerCase();
@@ -295,7 +322,14 @@ export function PlanViewerWorkspace({
         }
       }
     },
-    [sheets, activeSheetId, searchPanelOpen, nextLocalMatch, prevLocalMatch, canEditMeasurements]
+    [
+      planSheets,
+      activeSheetId,
+      searchPanelOpen,
+      nextLocalMatch,
+      prevLocalMatch,
+      canEditMeasurements,
+    ]
   );
 
   useEffect(() => {
@@ -317,7 +351,9 @@ export function PlanViewerWorkspace({
         onSubmit={handleScaleSubmit}
       />
 
+      {/* react-resizable-panels: numeric minSize/maxSize = pixels; use "25%" / "1px" strings for % / px. */}
       <Group
+        id={layoutId}
         orientation="horizontal"
         className="flex min-h-0 flex-1"
         defaultLayout={defaultLayout}
@@ -325,25 +361,46 @@ export function PlanViewerWorkspace({
       >
         <Panel
           id={PANEL_IDS[0]}
-          defaultSize="18%"
-          minSize={12}
-          maxSize={35}
-          collapsible
+          defaultSize="25%"
+          minSize="1px"
+          maxSize="100%"
           className="flex min-h-0 min-w-0 flex-col border-r border-border bg-surface"
         >
           <div className="border-b border-border px-2 py-1.5">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Sheets ({sheets.length})
+              Sheets ({planSheets.length})
             </span>
+            {plans.length > 1 && (
+              <div className="mt-2 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+                {plans.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    title={p.filename}
+                    onClick={() => onActivePlanChange(p.id)}
+                    className={cn(
+                      "max-w-full truncate rounded-md border px-2 py-1 text-left text-[10px] font-medium transition-colors",
+                      p.id === activePlanId
+                        ? "border-primary bg-primary/10 text-foreground"
+                        : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                    )}
+                  >
+                    {p.filename}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="min-h-0 flex-1 overflow-auto p-2">
-            {sheets.length === 0 ? (
+            {planSheets.length === 0 ? (
               <p className="p-2 text-xs text-muted-foreground">
-                No sheets yet. Upload a plan from the project panel below.
+                {plans.some((p) => p.id === activePlanId)
+                  ? "No sheets for this plan yet. It may still be processing — check status in Plans below."
+                  : "No sheets yet. Upload a plan from the project panel below."}
               </p>
             ) : (
               <ul className="flex flex-col gap-2">
-                {sheets.map((sheet) => {
+                {planSheets.map((sheet) => {
                   const isActive = sheet.id === activeSheetId;
                   const scaleOk = sheet.scale_value != null;
                   return (
@@ -389,11 +446,18 @@ export function PlanViewerWorkspace({
           </div>
         </Panel>
 
-        <Separator className="w-px bg-border" />
+        <Separator
+          className={cn(
+            "relative z-10 w-2 max-w-2 shrink-0 bg-border",
+            "transition-colors hover:bg-primary/35 data-[separator=active]:bg-primary/50 data-[separator=focus]:bg-primary/30"
+          )}
+        />
 
         <Panel
           id={PANEL_IDS[1]}
-          minSize={40}
+          defaultSize="50%"
+          minSize="1px"
+          maxSize="100%"
           className="relative flex min-h-0 min-w-0 flex-col bg-background"
         >
           <div className="flex shrink-0 items-center gap-1 border-b border-border bg-surface px-2 py-1">
@@ -468,6 +532,11 @@ export function PlanViewerWorkspace({
             loading={searchLoading}
             activeSheetId={activeSheetId}
             onPickSheet={(id) => {
+              const hit = sheets.find((s) => s.id === id);
+              if (hit && hit.plan_id !== activePlanId) {
+                skipSheetResetOnPlanChangeRef.current = true;
+                onActivePlanChange(hit.plan_id);
+              }
               setUserSheetId(id);
               setSearchPanelOpen(false);
             }}
@@ -515,14 +584,18 @@ export function PlanViewerWorkspace({
           </div>
         </Panel>
 
-        <Separator className="w-px bg-border" />
+        <Separator
+          className={cn(
+            "relative z-10 w-2 max-w-2 shrink-0 bg-border",
+            "transition-colors hover:bg-primary/35 data-[separator=active]:bg-primary/50 data-[separator=focus]:bg-primary/30"
+          )}
+        />
 
         <Panel
           id={PANEL_IDS[2]}
-          defaultSize="22%"
-          minSize={14}
-          maxSize={40}
-          collapsible
+          defaultSize="25%"
+          minSize="1px"
+          maxSize="100%"
           className="flex min-h-0 min-w-0 flex-col border-l border-border bg-surface"
         >
           <div className="border-b border-border px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">

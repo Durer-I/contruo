@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, UploadFile, File
+from fastapi import APIRouter, Depends, UploadFile, File, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db
@@ -139,6 +139,17 @@ async def update_project(
         sheet_count=0,
         member_count=0,
     )
+
+
+@router.delete("/{project_id}", status_code=204)
+async def delete_project(
+    project_id: uuid.UUID,
+    auth: AuthContext = Depends(require_permission(Permission.CREATE_PROJECTS)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete the project, all plans/sheets, guest access, and Supabase files."""
+    await project_service.delete_project(db, auth.org_id, project_id, auth.user_id)
+    return Response(status_code=204)
 
 
 # ── Plans (upload + list) ────────────────────────────────────────────

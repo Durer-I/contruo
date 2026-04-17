@@ -20,8 +20,11 @@ import {
   type ViewportRect,
 } from "@/components/plan-viewer/pdf-text-search";
 
-import type { PDFDocumentProxy } from "pdfjs-dist";
+import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import type { PageViewport } from "pdfjs-dist";
+
+/** Return type of ``PDFPageProxy.render`` — cancel in-flight work before starting another render on the same canvas. */
+type PdfPageRenderTask = ReturnType<PDFPageProxy["render"]>;
 
 const MIN_ZOOM_MULT = 0.15;
 const MAX_ZOOM_MULT = 8;
@@ -95,6 +98,7 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
     const pdfRef = useRef<PDFDocumentProxy | null>(null);
     const viewportRef = useRef<PageViewport | null>(null);
     const renderTokenRef = useRef(0);
+    const activeRenderTaskRef = useRef<PdfPageRenderTask | null>(null);
     const panningRef = useRef<{
       pointerId: number;
       lastX: number;
@@ -217,6 +221,9 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
       const container = containerRef.current;
       if (!pdf || !canvas || !container) return;
 
+      activeRenderTaskRef.current?.cancel();
+      activeRenderTaskRef.current = null;
+
       const token = ++renderTokenRef.current;
       const page = await pdf.getPage(pageNumber);
       if (token !== renderTokenRef.current) return;
@@ -243,13 +250,26 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
       const transform =
         dpr !== 1 ? ([dpr, 0, 0, dpr, 0, 0] as [number, number, number, number, number, number]) : undefined;
 
-      await page
-        .render({
-          canvas,
-          viewport,
-          transform,
-        })
-        .promise;
+      if (token !== renderTokenRef.current) return;
+
+      const renderTask = page.render({
+        canvas,
+        viewport,
+        transform,
+      });
+      activeRenderTaskRef.current = renderTask;
+
+      try {
+        await renderTask.promise;
+      } catch (e) {
+        if (token !== renderTokenRef.current) return;
+        if (e instanceof Error && e.name === "RenderingCancelledException") return;
+        throw e;
+      } finally {
+        if (activeRenderTaskRef.current === renderTask) {
+          activeRenderTaskRef.current = null;
+        }
+      }
 
       if (token !== renderTokenRef.current) return;
 
@@ -265,13 +285,20 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
           onSearchRectsChange?.(rects.length);
         }
       } else {
-        setSearchRects([]);
-        onSearchRectsChange?.(0);
+        if (token === renderTokenRef.current) {
+          setSearchRects([]);
+          onSearchRectsChange?.(0);
+        }
       }
     }, [pageNumber, onDisplayZoomPercent, searchQuery, onSearchRectsChange]);
 
     useEffect(() => {
       void renderPage();
+      return () => {
+        activeRenderTaskRef.current?.cancel();
+        activeRenderTaskRef.current = null;
+        renderTokenRef.current += 1;
+      };
     }, [renderPage, documentUrl, loading, containerSize.w, containerSize.h, fitMode, zoomMultiplier]);
 
     // Center once per sheet when no saved viewport

@@ -287,3 +287,37 @@ async def test_list_sheets_returns_thumbnails():
             assert len(body["sheets"]) == 1
             assert body["sheets"][0]["thumbnail_url"] == "https://signed.example/thumb.png"
             assert body["sheets"][0]["sheet_name"] == "A1.01 - First Floor Plan"
+
+
+# ── Project delete ───────────────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_delete_project_succeeds_for_admin():
+    ctx = _ctx("admin")
+    _override_auth(ctx)
+    db = _mock_db()
+
+    _override_db(db)
+
+    pid = uuid.uuid4()
+    with patch(
+        "app.services.project_service.delete_project",
+        new_callable=AsyncMock,
+        return_value=None,
+    ) as mock_delete:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            r = await ac.delete(f"/api/v1/projects/{pid}")
+            assert r.status_code == 204
+            assert r.content == b""
+            mock_delete.assert_awaited_once_with(db, ctx.org_id, pid, ctx.user_id)
+
+
+@pytest.mark.anyio
+async def test_delete_project_forbidden_for_estimator():
+    ctx = _ctx("estimator")
+    _override_auth(ctx)
+    _override_db(_mock_db())
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.delete(f"/api/v1/projects/{uuid.uuid4()}")
+        assert r.status_code == 403

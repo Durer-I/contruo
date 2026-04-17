@@ -96,3 +96,23 @@ def plan_storage_path(org_id, plan_id, filename: str) -> str:
 
 def thumbnail_storage_path(org_id, plan_id, page_number: int) -> str:
     return f"{org_id}/plans/{plan_id}/thumbs/page-{page_number}.png"
+
+
+def remove_files(bucket: str, paths: list[str]) -> None:
+    """Best-effort removal of storage objects. Logs warnings on failure (e.g. already deleted)."""
+    cleaned = sorted({p.strip() for p in paths if p and p.strip()})
+    if not cleaned:
+        return
+    sb = _admin_client()
+    chunk = 100
+    for i in range(0, len(cleaned), chunk):
+        batch = cleaned[i : i + chunk]
+        try:
+            sb.storage.from_(bucket).remove(batch)
+        except Exception as e:
+            logger.warning(
+                "Storage remove failed for bucket=%s batch_size=%s: %s",
+                bucket,
+                len(batch),
+                e,
+            )
