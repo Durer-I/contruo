@@ -1,0 +1,45 @@
+---
+description: Core project context for Contruo - a construction takeoff SaaS
+alwaysApply: true
+---
+
+# Contruo - Project Context
+
+Contruo is an online SaaS platform for construction estimators to create, edit, and manage takeoffs. It supports real-time multi-user collaboration and will include AI-powered automation.
+
+## Tech Stack
+
+- **Frontend:** Next.js + React + TypeScript + Tailwind CSS + shadcn/ui
+- **Backend:** FastAPI (Python 3.11+)
+- **Database:** PostgreSQL via Supabase (with Row-Level Security)
+- **Auth:** Supabase Auth (email/password)
+- **Real-Time:** Liveblocks (live cursors, presence, measurement sync)
+- **File Storage:** Supabase Storage (PDF plans, logos)
+- **Payments:** DodoPayments (annual per-seat billing)
+- **Task Queue:** Celery + Redis (PDF processing, exports, emails)
+- **PDF Processing:** PyMuPDF (fitz) + pdfplumber
+
+## Key Documentation
+
+Always reference these files for specifications and decisions:
+
+- `docs/architecture/backend.md` -- API structure, DB schema, endpoints, integrations
+- `docs/design/design-system.md` -- Colors, typography, spacing, shadcn customization, dark theme
+- `docs/design/screen-layouts.md` -- Screen wireframes, UX flows, keyboard shortcuts
+- `features/` -- Feature specs organized by category (core/, collaboration/, platform/, etc.)
+- `sprints/roadmap.md` -- Sprint plan and feature-to-sprint mapping
+- `sprints/sprint-XX.md` -- Individual sprint tasks and acceptance criteria
+
+## Core Concepts
+
+- **Condition:** A named, styled category for measurements (e.g., "Interior Wall - 8' Drywall")
+- **Assembly:** List of material/labor items with formulas attached to a condition
+- **Measurement:** A drawn element on a plan (linear, area, or count) belonging to a condition
+- **Formula Engine:** Shared expression parser that derives quantities from measurements
+
+## Design Philosophy
+
+- Dark theme, minimal, professional (Figma/Linear aesthetic)
+- Desktop-first (minimum 1280x720, optimized for 1920x1080)
+- Information-dense, tool-like UI -- not a marketing page
+- All data is org-scoped via `org_id` on every table (multi-tenancy)

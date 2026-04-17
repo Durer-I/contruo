@@ -1,0 +1,192 @@
+"""Celery task: extract pages, sheet names, thumbnails, and text layer from a plan PDF.
+
+Runs asynchronously so uploads return instantly. Updates the plan row with progress
+after each page so the frontend can poll for "Processing page X of Y" status.
+"""
+
+from __future__ import annotations
+
+import logging
+import uuid
+
+from sqlalchemy import create_engine, update
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.config import get_settings
+from app.models.plan import Plan
+from app.models.sheet import Sheet
+from app.tasks.celery_app import celery_app
+from app.utils import storage
+from app.utils.pdf import extract_pdf
+from app.utils.scale_detect import detect_scale
+
+logger = logging.getLogger(__name__)
+
+
+def _sync_database_url(url: str) -> str:
+    """Celery tasks are synchronous; asyncpg is async-only so swap it for psycopg v3.
+
+    psycopg (v3) is declared in requirements.txt for worker use. SQLAlchemy picks
+    the right driver from the ``+psycopg`` scheme.
+    """
+    u = url.strip()
+    if u.startswith("postgresql+asyncpg://"):
+        return "postgresql+psycopg://" + u.removeprefix("postgresql+asyncpg://")
+    if u.startswith("postgresql://"):
+        return "postgresql+psycopg://" + u.removeprefix("postgresql://")
+    if u.startswith("postgres://"):
+        return "postgresql+psycopg://" + u.removeprefix("postgres://")
+    return u
+
+
+_settings = get_settings()
+#: Sync engine dedicated to the Celery worker. Kept module-level so multiple invocations
+#: reuse the connection pool.
+_sync_engine = create_engine(
+    _sync_database_url(_settings.database_url),
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+)
+SyncSession = sessionmaker(bind=_sync_engine, expire_on_commit=False, class_=Session)
+
+
+def _mark_error(plan_id: uuid.UUID, message: str) -> None:
+    with SyncSession() as session:
+        session.execute(
+            update(Plan)
+            .where(Plan.id == plan_id)
+            .values(status="error", error_message=message[:500])
+        )
+        session.commit()
+
+
+@celery_app.task(
+    name="pdf_processing.process_plan",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=30,
+    acks_late=True,
+)
+def process_plan(self, plan_id_str: str) -> dict:
+    """Process an uploaded plan PDF.
+
+    Steps:
+      1. Load the plan row and verify status == 'processing'.
+      2. Download the PDF from Supabase Storage.
+      3. Use PyMuPDF to extract page count, text, and thumbnails per page.
+      4. Persist ``sheets`` rows, upload thumbnails, update the plan progress.
+      5. Set plan.status = 'ready' on success, 'error' on failure.
+    """
+    plan_id = uuid.UUID(plan_id_str)
+
+    try:
+        with SyncSession() as session:
+            plan = session.get(Plan, plan_id)
+            if not plan:
+                logger.warning("process_plan: plan %s not found", plan_id)
+                return {"status": "not_found"}
+            org_id = plan.org_id
+            project_id = plan.project_id
+            storage_path = plan.storage_path
+
+            # Clear any existing sheets (in case this is a retry).
+            session.execute(Sheet.__table__.delete().where(Sheet.plan_id == plan.id))
+            session.execute(
+                update(Plan)
+                .where(Plan.id == plan_id)
+                .values(status="processing", processed_pages=0, error_message=None)
+            )
+            session.commit()
+    except Exception as e:
+        logger.exception("Failed to initialize plan processing")
+        _mark_error(plan_id, str(e))
+        return {"status": "error", "message": str(e)}
+
+    try:
+        pdf_bytes = storage.download_bytes(storage.PLANS_BUCKET, storage_path)
+    except Exception as e:
+        logger.exception("Failed to download plan PDF from storage")
+        _mark_error(plan_id, f"Download failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+    def _progress(processed: int, total: int) -> None:
+        # Incremental progress checkpoint so the UI can show "Processing page X of Y".
+        try:
+            with SyncSession() as s:
+                s.execute(
+                    update(Plan)
+                    .where(Plan.id == plan_id)
+                    .values(processed_pages=processed, page_count=total)
+                )
+                s.commit()
+        except Exception:
+            logger.exception("Progress update failed (non-fatal)")
+
+    try:
+        result = extract_pdf(pdf_bytes, on_page=_progress)
+    except Exception as e:
+        logger.exception("PDF extraction failed")
+        _mark_error(plan_id, f"PDF parse failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+    # Persist sheets and upload thumbnails.
+    try:
+        storage.ensure_bucket(storage.THUMBNAILS_BUCKET, public=False)
+        with SyncSession() as session:
+            for page in result.pages:
+                hint = detect_scale(
+                    page.text_content or "", pdf_metadata=result.metadata
+                )
+                thumb_path = None
+                if page.thumbnail_png:
+                    thumb_path = storage.thumbnail_storage_path(
+                        org_id, plan_id, page.page_number
+                    )
+                    try:
+                        storage.upload_bytes(
+                            storage.THUMBNAILS_BUCKET,
+                            thumb_path,
+                            page.thumbnail_png,
+                            content_type="image/png",
+                            upsert=True,
+                        )
+                    except Exception:
+                        logger.exception("Thumbnail upload failed for page %s", page.page_number)
+                        thumb_path = None
+
+                sheet = Sheet(
+                    org_id=org_id,
+                    plan_id=plan_id,
+                    project_id=project_id,
+                    page_number=page.page_number,
+                    sheet_name=page.sheet_name,
+                    width_px=page.width_px,
+                    height_px=page.height_px,
+                    thumbnail_path=thumb_path,
+                    text_content=page.text_content or None,
+                    scale_value=hint.scale_value if hint else None,
+                    scale_unit=hint.scale_unit if hint else None,
+                    scale_label=(hint.scale_label[:100] if hint else None),
+                    scale_source="auto" if hint else None,
+                )
+                session.add(sheet)
+
+            session.execute(
+                update(Plan)
+                .where(Plan.id == plan_id)
+                .values(
+                    status="ready",
+                    page_count=result.page_count,
+                    processed_pages=result.page_count,
+                    error_message=None,
+                )
+            )
+            session.commit()
+    except Exception as e:
+        logger.exception("Failed to persist processed sheets")
+        _mark_error(plan_id, f"Persist failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+    logger.info("Processed plan %s (%s pages)", plan_id, result.page_count)
+    return {"status": "ready", "page_count": result.page_count}

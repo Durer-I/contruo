@@ -1,0 +1,41 @@
+# FastAPI & ASGI
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.18
+
+# Database
+sqlalchemy[asyncio]>=2.0.36
+asyncpg>=0.30.0
+# Sync driver used by Celery workers (async sessions can't cross thread boundaries in Celery)
+psycopg[binary]>=3.2.0
+alembic>=1.14.0
+
+# Validation & Settings
+pydantic[email]>=2.10.0
+pydantic-settings>=2.7.0
+
+# Supabase
+supabase>=2.11.0
+python-jose[cryptography]>=3.3.0
+httpx>=0.28.0
+
+# Celery & Redis
+celery[redis]>=5.4.0
+redis>=5.2.0
+
+# PDF Processing (needed later but install now)
+PyMuPDF>=1.25.0
+pdfplumber>=0.11.0
+Pillow>=11.0.0
+
+# Utilities
+python-dotenv>=1.0.1
+
+# Testing
+pytest>=8.3.0
+pytest-asyncio>=0.25.0
+pytest-cov>=6.0.0
+
+# Linting
+ruff>=0.8.0
+mypy>=1.13.0

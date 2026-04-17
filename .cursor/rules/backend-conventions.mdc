@@ -1,0 +1,37 @@
+---
+description: Backend conventions for FastAPI + Supabase + Python
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Backend Conventions
+
+## API Structure
+
+- All endpoints under `/api/v1/`
+- Follow the project structure in `docs/architecture/backend.md`
+- Layers: `api/` (routes) -> `services/` (business logic) -> `models/` (ORM)
+- Pydantic schemas in `schemas/` for request/response validation
+
+## Database
+
+- Every data table MUST have an `org_id` column (NOT NULL) for multi-tenancy
+- Use Supabase Row-Level Security (RLS) on all tables
+- Alembic for migrations in `migrations/`
+- Use SQLAlchemy / SQLModel as the ORM
+- JSONB columns for flexible data (condition properties, measurement geometry)
+
+## Auth & Permissions
+
+- Validate Supabase JWT on every request via middleware
+- Extract `user_id` and `org_id` from the authenticated session
+- All queries MUST be scoped by `org_id`
+- Use `permission_service.py` for role-based access checks (Owner, Admin, Estimator, Viewer)
+
+## Patterns
+
+- Async endpoints with `async def`
+- Celery tasks in `tasks/` for heavy work (PDF processing, exports, emails)
+- Log all data changes to `event_log` table via `event_service.py`
+- Consistent error responses: `{"error": {"code": "...", "message": "..."}}`
+- Never store raw card data -- DodoPayments handles PCI compliance

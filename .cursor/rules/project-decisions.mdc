@@ -1,0 +1,133 @@
+---
+description: Key product and technical decisions made during planning - the reasoning behind Contruo's design
+alwaysApply: true
+---
+
+# Contruo - Key Decisions & Context
+
+These decisions were made during the initial product planning phase. Reference them when making implementation choices.
+
+## Product Scope
+
+- **Target market:** GCs, subcontractors, specialty trades, and estimating firms (broad market)
+- **Known competitors:** PlanSwift (desktop), Bluebeam Revu (PDF markup), On-Screen Takeoff (desktop), Togal.AI (AI-first)
+- **Key differentiator:** Real-time collaboration (Figma-style) + web-based -- no desktop competitor offers this
+- **MVP focus:** Core takeoff, collaboration, export, platform. NO AI features, cost estimation, or project management at MVP
+- **Backburner categories:** Project Management (3 features), Cost & Estimation (4 features), AI Features (5 features) -- stubs exist in `features/` but not brainstormed yet
+
+## Core Takeoff Decisions
+
+- **Plan format:** Vector PDFs only at MVP. DWG/DXF and images deferred.
+- **Scale calibration:** Manual (draw known distance) + auto-detect from PDF metadata/title block + AI-assisted fallback
+- **Linear takeoff drawing modes:** Click-to-click + freehand tracing + snap-to-geometry (all three at MVP)
+- **Curved lines:** Arc/curve segments supported from MVP (important for curbs, rounded walls, piping)
+- **Multi-segment display:** Show both individual segment lengths AND combined total
+- **Running total:** Yes, updates in real-time as user draws
+- **Vertex editing:** Full -- move, add midpoints, delete vertices, extend endpoints
+- **Deductions/backouts:** Supported at MVP for linear measurements (subtract door/window openings)
+- **Derived quantities:** Formula-based -- each condition can define custom formulas (e.g., length x height = area). Shared formula engine across all measurement types.
+- **Visual style:** Condition-styled lines/fills (color, thickness, dash pattern, fill opacity) with optional inline labels
+
+## Area Takeoff Decisions
+
+- **Shape tools:** Polygon + rectangle + circle/ellipse + snap-to-room (auto-detect enclosed boundaries from PDF vectors)
+- **Cutouts:** Both methods -- boolean subtraction AND inner boundary (hole-in-polygon). Recommended both for different workflows.
+- **Slope adjustment:** Not at MVP -- flat area calculations only
+- **Perimeter:** Auto-calculated with every area measurement, available as a formula variable
+
+## Count Takeoff Decisions
+
+- **Placement:** Rapid-click mode (stay in count mode, each click adds a marker)
+- **Marker style:** Simple colored dot (not custom icons at MVP)
+- **Aggregation:** Per-sheet counts AND project-wide totals
+- **Grouping:** Separate conditions for each variation (no sub-groups). E.g., "Door - Single" and "Door - Double" are separate conditions.
+
+## Conditions & Assemblies Decisions
+
+- **Condition scope:** Project-level + org template library (import as independent copy, no linking)
+- **Assembly complexity:** Moderate flat list at MVP (item name + unit + formula). Data model has `parent_id` field ready for future nested sub-assemblies.
+- **Condition properties:** Name, color, line style, measurement type, and unit are required. Trade/CSI division, description, notes are optional.
+- **Formula editor:** Text-based with autocomplete for variables. Supports `+`, `-`, `*`, `/`, `^`, `()`, and functions like `round()`, `ceil()`, `floor()`.
+- **Condition reassignment:** Yes -- change a measurement's condition after drawing, re-styles and recalculates.
+- **Cost linking:** NOT at MVP -- assemblies produce quantities only. Cost database is a P1 feature.
+
+## Quantities Panel Decisions
+
+- **Layout:** Grouped tree view (Condition > Sheet > Measurement > Assembly Items)
+- **Subtotals:** Per condition + per sheet (not fully flexible pivot-table grouping at MVP)
+- **Linking:** Full bidirectional -- click row to highlight on plan, click measurement to highlight row
+- **Inline editing:** Yes, manual override with visual indicator. Original measured value always preserved.
+- **Custom columns:** Fixed columns at MVP (Name, Quantity, Unit, Override indicator). Custom columns deferred.
+- **Search/filter:** Not at MVP -- add later.
+- **Assembly display:** Nested under each measurement (expand to see item breakdown). No separate project-wide summary view at MVP.
+
+## Collaboration Decisions
+
+- **Real-time level:** Full Figma-style same-sheet editing (not sheet-locking, not region-locking)
+- **Presence:** Avatar bar + live cursors on the plan (like Figma). NO active tool indicator or in-progress drawing preview at MVP.
+- **Conflict resolution:** Lock-on-select with visual indicator ("Being edited by Sarah"). Chosen over last-write-wins because the UX difference is massive and implementation cost is minimal (lightweight presence metadata).
+- **Max users per sheet:** 2-5 at MVP
+- **Follow mode:** Not at MVP
+- **Offline:** Online only at MVP. Graceful reconnection for brief disconnections.
+
+## Roles & Permissions Decisions
+
+- **Role model:** Fixed predefined roles at MVP (Owner, Admin, Estimator, Viewer). Custom roles deferred but data model supports them.
+- **Permission scope:** Organization-level only (one role per user across the org). Per-project overrides deferred.
+- **Guest access:** Free guest account required (not anonymous links). Guests get Viewer access to specific shared projects. Growth engine: every guest is a potential future customer.
+
+## Comments & Activity Log (P1 - Post-Launch)
+
+- **Comments:** Attached to specific measurements (not arbitrary plan pins). Threaded conversations, @mentions with in-app + email notifications.
+- **Activity log:** View-only audit trail at launch (no rollback). Architecture supports future full-state rollback.
+- **Critical:** Both features have their data model and infrastructure groundwork built into the MVP (event_log table, comment schema, notification system). Only the UI is deferred.
+
+## Export Decisions
+
+- **MVP scope:** Quantities table only (no annotated plan snapshots, no assembly breakdowns in export)
+- **Export scope:** Full project only (no subset selection at MVP)
+- **Excel format:** Grouped by condition with subtotals, using Excel's native grouping/outline feature
+- **Branding:** No company branding at MVP. Clean Contruo-formatted output. Branding comes with Custom Report Builder (P2).
+- **Integrations/API:** Fully deferred to P2. Not brainstormed yet.
+
+## Platform Decisions
+
+- **Auth:** Email/password only at MVP. Google, Microsoft, SSO all deferred.
+- **Signup flow:** Organization required at signup (no personal-only accounts). User becomes Owner automatically.
+- **Onboarding:** Minimal -- welcome modal with 4-step workflow overview on first login. No full guided tour at MVP.
+- **Pricing model:** Single plan, per seat, billed annually (displayed as monthly equivalent). No tiers, no freemium, no free trial.
+- **Seat management:** Prorated mid-cycle additions (charge for remaining months). No refund for removed seats.
+- **Payment provider:** DodoPayments (India-based company)
+- **Org structure:** Flat (no departments/teams). Simple and sufficient for teams of 2-20.
+- **Org settings:** Minimal -- name, logo, default unit system (imperial/metric). Extensible for future settings.
+
+## Design Decisions
+
+- **Aesthetic:** Dark theme, minimal, professional. Figma/Linear inspired. Tool-like, not website-like.
+- **Accent color:** Purple (placeholder -- final brand color TBD)
+- **Font:** Inter (UI) + JetBrains Mono (formulas/values)
+- **Component library:** shadcn/ui with Contruo dark theme customization
+- **Layout:** Desktop-first, minimum 1280x720. No mobile/tablet support at MVP.
+- **Density:** Dense by default. 8px standard gap, 32px row/button height. Estimators expect information density.
+
+## Architecture Decisions
+
+- **Why FastAPI:** Python is the best choice for AI/ML (future features), PDF processing (PyMuPDF, pdfplumber), and computational geometry (Shapely). FastAPI is async-native for real-time WebSocket support.
+- **Why Supabase:** PostgreSQL + built-in auth + real-time + storage in one service. Fastest MVP path. RLS for multi-tenancy security.
+- **Why Liveblocks:** Handles the hardest parts of real-time collaboration (CRDTs, presence, cursor sync). Faster to integrate than building custom WebSocket infrastructure. Yjs was the alternative but requires self-hosting.
+- **Why not Django:** FastAPI is lighter, faster, and gives more control for real-time requirements. Django's batteries (admin, ORM) are nice but not critical when using Supabase.
+- **Data isolation:** `org_id` on every table + Supabase RLS. Non-negotiable security requirement.
+- **Event logging from day one:** `event_log` table captures all changes even before the Activity Log UI exists. Zero-regret infrastructure.
+
+## Testing Decisions
+
+- **Philosophy:** Pragmatic -- test critical paths and business logic thoroughly, skip low-value tests (canvas rendering, CSS, third-party internals)
+- **Coverage target:** 80% (unit + integration combined). Enforced by CI.
+- **CI policy:** All tests must pass before merging. No exceptions.
+- **Testing stack:** pytest (backend), Vitest + React Testing Library (frontend), Playwright (E2E)
+- **E2E scope:** Critical flows only (5-10 tests: signup, login, create project, takeoff, export, invite). Written during Sprint 15.
+- **No visual regression testing** at MVP. Canvas rendering is verified manually.
+- **Sprint workflow:** Unit + integration tests written alongside each feature. E2E tests added in Sprint 15 (Polish & QA).
+- **Mock at the boundary:** Mock Supabase, Liveblocks, DodoPayments, Celery at the service edge. Never mock internal functions.
+- **Highest-value test targets:** Formula engine, geometry calculations, scale calibration, auth/RLS -- all pure logic with edge cases.
+- **Full strategy:** See `docs/testing-strategy.md`

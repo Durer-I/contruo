@@ -1,0 +1,43 @@
+---
+description: Sprint implementation workflow and conventions
+globs: "sprints/**/*.md"
+alwaysApply: false
+---
+
+# Sprint Workflow
+
+## When Implementing a Sprint
+
+1. Read the sprint file thoroughly -- follow tasks in order
+2. Check the **Depends On** field to ensure prerequisite sprints are complete
+3. Reference the linked feature files and docs for detailed requirements
+4. Follow acceptance criteria as the definition of done
+5. Check off tasks as you complete them
+
+## Sprint File References
+
+- `sprints/roadmap.md` -- overview, dependency graph, feature-to-sprint mapping
+- `features/` -- detailed feature specs with user stories, requirements, and open questions
+- `docs/architecture/backend.md` -- DB schema, API endpoints, project structure
+- `docs/architecture/frontend.md` -- Next.js structure, routing, state, canvas layers
+- `docs/design/design-system.md` -- theme, colors, component styling
+- `docs/design/screen-layouts.md` -- wireframes, UX flows, keyboard shortcuts
+- `docs/testing-strategy.md` -- test stack, conventions, per-sprint testing expectations
+
+## Key Conventions
+
+- Each sprint builds on previous ones -- always verify dependencies first
+- The event_log table should capture all data changes from Sprint 01 onward
+- RLS policies must be added to every new table
+- All new API endpoints need JWT auth middleware and org_id scoping
+- Test with the acceptance criteria checklist before marking a sprint complete
+
+## Testing Requirements
+
+- Every feature PR must include unit + integration tests
+- Backend: pytest tests in `tests/unit/` and `tests/integration/`
+- Frontend: Vitest tests colocated or in `__tests__/`
+- Coverage must not drop below 80% (enforced by CI)
+- E2E tests (Playwright) are written during Sprint 15, not per-feature
+- Mock external services (Supabase, Liveblocks, DodoPayments) at the boundary
+- See `docs/testing-strategy.md` for full conventions and test file structure

@@ -1,0 +1,210 @@
+import uuid
+
+from fastapi import APIRouter, Depends, UploadFile, File
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.dependencies import get_db
+from app.middleware.auth import AuthContext
+from app.services.permission_service import Permission, require_permission
+from app.services import org_service
+from app.schemas.org import (
+    UpdateOrgRequest,
+    OrgResponse,
+    MemberListResponse,
+    MemberResponse,
+    UpdateMemberRoleRequest,
+    InviteRequest,
+    InvitationResponse,
+    InvitationListResponse,
+    AcceptInvitationRequest,
+    GuestInviteRequest,
+)
+from app.schemas.auth import AuthResponse
+
+router = APIRouter(prefix="/org")
+
+
+# ── Organization Settings ────────────────────────────────────────────
+
+@router.get("", response_model=OrgResponse)
+async def get_org(
+    auth: AuthContext = Depends(require_permission(Permission.VIEW_PLANS)),
+    db: AsyncSession = Depends(get_db),
+):
+    org = await org_service.get_org(db, auth.org_id)
+    return org
+
+
+@router.patch("", response_model=OrgResponse)
+async def update_org(
+    body: UpdateOrgRequest,
+    auth: AuthContext = Depends(require_permission(Permission.MANAGE_ORG_SETTINGS)),
+    db: AsyncSession = Depends(get_db),
+):
+    org = await org_service.update_org(
+        db,
+        auth.org_id,
+        auth.user_id,
+        name=body.name,
+        default_units=body.default_units,
+    )
+    return org
+
+
+@router.post("/logo", response_model=OrgResponse)
+async def upload_logo(
+    file: UploadFile = File(...),
+    auth: AuthContext = Depends(require_permission(Permission.MANAGE_ORG_SETTINGS)),
+    db: AsyncSession = Depends(get_db),
+):
+    content = await file.read()
+    max_size = 2 * 1024 * 1024
+    if len(content) > max_size:
+        from app.middleware.error_handler import AppException
+        raise AppException(code="FILE_TOO_LARGE", message="Logo must be under 2MB", status_code=400)
+
+    ext = (file.filename or "logo.png").rsplit(".", 1)[-1].lower()
+    if ext not in ("png", "jpg", "jpeg", "svg", "webp"):
+        from app.middleware.error_handler import AppException
+        raise AppException(code="INVALID_FILE_TYPE", message="Logo must be PNG, JPG, SVG, or WebP", status_code=400)
+
+    from app.config import get_settings
+    from supabase import create_client
+    settings = get_settings()
+    supabase = create_client(settings.supabase_url, settings.supabase_service_role_key)
+
+    path = f"{auth.org_id}/logo.{ext}"
+    supabase.storage.from_("org-assets").upload(
+        path, content, {"content-type": file.content_type or "image/png", "upsert": "true"}
+    )
+    logo_url = f"{settings.supabase_url}/storage/v1/object/public/org-assets/{path}"
+
+    org = await org_service.update_org(db, auth.org_id, auth.user_id, logo_url=logo_url)
+    return org
+
+
+# ── Members ──────────────────────────────────────────────────────────
+
+@router.get("/members", response_model=MemberListResponse)
+async def list_members(
+    auth: AuthContext = Depends(require_permission(Permission.VIEW_PLANS)),
+    db: AsyncSession = Depends(get_db),
+):
+    members = await org_service.list_members(db, auth.org_id)
+    return {"members": members}
+
+
+@router.patch("/members/{member_id}", response_model=MemberResponse)
+async def update_member_role(
+    member_id: uuid.UUID,
+    body: UpdateMemberRoleRequest,
+    auth: AuthContext = Depends(require_permission(Permission.ASSIGN_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    member = await org_service.update_member_role(
+        db, auth.org_id, member_id, body.role, auth.user_id
+    )
+    # Fetch email from Supabase for response
+    from supabase import create_client
+    from app.config import get_settings
+    s = get_settings()
+    sb = create_client(s.supabase_url, s.supabase_service_role_key)
+    email = ""
+    try:
+        auth_user = sb.auth.admin.get_user_by_id(str(member_id))
+        email = auth_user.user.email or ""
+    except Exception:
+        pass
+    return MemberResponse(
+        id=member.id,
+        email=email,
+        full_name=member.full_name,
+        role=member.role,
+        is_guest=member.is_guest,
+        deactivated_at=member.deactivated_at,
+        created_at=member.created_at,
+    )
+
+
+@router.delete("/members/{member_id}", status_code=200)
+async def deactivate_member(
+    member_id: uuid.UUID,
+    auth: AuthContext = Depends(require_permission(Permission.REMOVE_MEMBERS)),
+    db: AsyncSession = Depends(get_db),
+):
+    await org_service.deactivate_member(db, auth.org_id, member_id, auth.user_id)
+    return {"message": "Member deactivated"}
+
+
+# ── Invitations ──────────────────────────────────────────────────────
+
+@router.post("/members/invite", response_model=InvitationResponse, status_code=201)
+async def invite_member(
+    body: InviteRequest,
+    auth: AuthContext = Depends(require_permission(Permission.INVITE_MEMBERS)),
+    db: AsyncSession = Depends(get_db),
+):
+    invitation = await org_service.create_invitation(
+        db, auth.org_id, body.email, body.role, auth.user_id
+    )
+    return invitation
+
+
+@router.get("/invitations", response_model=InvitationListResponse)
+async def list_invitations(
+    auth: AuthContext = Depends(require_permission(Permission.INVITE_MEMBERS)),
+    db: AsyncSession = Depends(get_db),
+):
+    invitations = await org_service.list_invitations(db, auth.org_id)
+    return {"invitations": invitations}
+
+
+@router.post("/invitations/{invitation_id}/resend", response_model=InvitationResponse)
+async def resend_invitation(
+    invitation_id: uuid.UUID,
+    auth: AuthContext = Depends(require_permission(Permission.INVITE_MEMBERS)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await org_service.resend_invitation(db, auth.org_id, invitation_id, auth.user_id)
+
+
+@router.post("/invitations/{invitation_id}/cancel", status_code=200)
+async def cancel_invitation(
+    invitation_id: uuid.UUID,
+    auth: AuthContext = Depends(require_permission(Permission.INVITE_MEMBERS)),
+    db: AsyncSession = Depends(get_db),
+):
+    await org_service.cancel_invitation(db, auth.org_id, invitation_id, auth.user_id)
+    return {"message": "Invitation cancelled"}
+
+
+@router.post("/invitations/accept/{token}", response_model=AuthResponse, status_code=201)
+async def accept_invitation(
+    token: str,
+    body: AcceptInvitationRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    return await org_service.accept_invitation(db, token, body.full_name, body.password)
+
+
+# ── Guest Access ─────────────────────────────────────────────────────
+
+@router.post("/guests/invite", response_model=InvitationResponse, status_code=201)
+async def invite_guest(
+    body: GuestInviteRequest,
+    auth: AuthContext = Depends(require_permission(Permission.INVITE_MEMBERS)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await org_service.invite_guest(
+        db, auth.org_id, body.email, body.project_id, auth.user_id
+    )
+
+
+@router.delete("/guests/{guest_id}", status_code=200)
+async def revoke_guest(
+    guest_id: uuid.UUID,
+    auth: AuthContext = Depends(require_permission(Permission.REMOVE_MEMBERS)),
+    db: AsyncSession = Depends(get_db),
+):
+    await org_service.revoke_guest_access(db, auth.org_id, guest_id, auth.user_id)
+    return {"message": "Guest access revoked"}

@@ -1,0 +1,35 @@
+---
+globs: "**/*.tsx,**/*.ts,**/*.css"
+alwaysApply: false
+---
+# Frontend Conventions
+
+## Component Patterns
+
+- Use functional components with TypeScript
+- Use shadcn/ui components customized with the Contruo dark theme (see `docs/design/design-system.md`)
+- Use Lucide Icons (16px inline, 20px nav, 24px features)
+- Font: Inter for UI, JetBrains Mono for formulas/measurement values
+
+## Styling
+
+- Tailwind CSS only -- no CSS modules or styled-components
+- Dark theme as default using CSS custom properties in HSL format
+- Purple accent (`#8b5cf6`) for primary actions and active states
+- Spacing: 4px base unit, `space-2` (8px) as default gap
+- Border radius: small and subtle (`rounded-sm` to `rounded-lg` max)
+- Shadows: minimal, only on floating elements (dropdowns, modals)
+
+## Layout
+
+- Three-panel workspace: sheet index (left) | plan viewer (center) | quantities panel (right)
+- Vertical split with resizable dividers
+- Sidebar: 240px default, collapsible to 48px
+- Buttons: 32px default height, 28px compact (toolbar)
+- Tables: 32px row height, dense, virtualized for large lists
+
+## State Management
+
+- Supabase Auth for authentication context
+- Liveblocks for real-time collaboration state (presence, cursors, live data)
+- React context/hooks for local UI state (active tool, selected condition, panel sizes)

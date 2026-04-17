@@ -1,0 +1,2 @@
+Add (Beyond takeoff measurements, should the Plan Viewer support general annotations (text, arrows, highlights) at MVP?) - Full amrkup kit, text, shapes, stamps, markups
+Plan overlay
