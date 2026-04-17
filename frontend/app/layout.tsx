@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { AppProviders } from "./providers";
 import "./globals.css";
 
 const inter = Inter({
@@ -26,10 +26,11 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${jetbrainsMono.variable} dark h-full antialiased`}
+      suppressHydrationWarning
+      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
-        <TooltipProvider delay={500}>{children}</TooltipProvider>
+      <body className="flex min-h-full flex-col bg-background text-foreground">
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

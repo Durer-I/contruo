@@ -12,6 +12,7 @@ import {
   PanelLeftClose,
   PanelLeft,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -100,8 +101,9 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Collapse toggle */}
-      <div className="border-t border-border p-2">
+      {/* Theme + collapse */}
+      <div className="space-y-1 border-t border-border p-2">
+        <ThemeToggle collapsed={collapsed} />
         <Button
           variant="ghost"
           size="sm"

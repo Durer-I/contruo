@@ -7,7 +7,14 @@ import {
   Separator,
   useDefaultLayout,
 } from "react-resizable-panels";
-import { AlertTriangle, Maximize2, Minus, Plus, StretchHorizontal } from "lucide-react";
+import {
+  AlertTriangle,
+  Loader2,
+  Maximize2,
+  Minus,
+  Plus,
+  StretchHorizontal,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { api, ApiError } from "@/lib/api";
@@ -18,7 +25,7 @@ import type {
   ProjectSearchResponse,
   SheetInfo,
 } from "@/types/project";
-import { useTopBarCenter } from "@/providers/top-bar-center-provider";
+import { useTakeoffToolbarSlot } from "@/providers/takeoff-toolbar-slot-provider";
 
 import {
   PlanPdfCanvas,
@@ -28,6 +35,7 @@ import {
 import { viewportStorageKey } from "@/components/plan-viewer/sheet-viewport-storage";
 import { TakeoffToolbar, type TakeoffTool } from "@/components/plan-viewer/takeoff-toolbar";
 import { ScaleCalibrationDialog } from "@/components/plan-viewer/scale-calibration-dialog";
+import { ScaleIntroDialog } from "@/components/plan-viewer/scale-intro-dialog";
 import { PlanSearchPanel } from "@/components/plan-viewer/plan-search-panel";
 
 interface PlanViewerWorkspaceProps {
@@ -39,10 +47,14 @@ interface PlanViewerWorkspaceProps {
   /** All sheets in the project (filtered to `activePlanId` for the index + viewer). */
   sheets: SheetInfo[];
   onSheetsRefresh: () => Promise<void>;
+  /** Parent silent refetch in progress (e.g. after saving scale). */
+  sheetsRefreshing?: boolean;
   canEditMeasurements: boolean;
 }
 
 const PANEL_IDS = ["sheet-index", "viewer", "quantities"] as const;
+
+type ScaleFlowStep = "idle" | "intro" | "picking" | "input";
 
 export function PlanViewerWorkspace({
   projectId,
@@ -52,11 +64,12 @@ export function PlanViewerWorkspace({
   onActivePlanChange,
   sheets,
   onSheetsRefresh,
+  sheetsRefreshing = false,
   canEditMeasurements,
 }: PlanViewerWorkspaceProps) {
   const canvasRef = useRef<PlanPdfCanvasHandle>(null);
   const skipSheetResetOnPlanChangeRef = useRef(false);
-  const { setCenter } = useTopBarCenter();
+  const { setTakeoffSlot } = useTakeoffToolbarSlot();
   const [userSheetId, setUserSheetId] = useState<string | null>(null);
   const [docBundle, setDocBundle] = useState<{ planId: string; url: string } | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
@@ -64,7 +77,7 @@ export function PlanViewerWorkspace({
 
   const [activeTool, setActiveTool] = useState<TakeoffTool>("select");
   const [scaleDraft, setScaleDraft] = useState<{ a: PdfPoint; b?: PdfPoint } | null>(null);
-  const [scaleDialogOpen, setScaleDialogOpen] = useState(false);
+  const [scaleStep, setScaleStep] = useState<ScaleFlowStep>("idle");
   const [pendingPdfLength, setPendingPdfLength] = useState(0);
 
   const [searchPanelOpen, setSearchPanelOpen] = useState(false);
@@ -176,7 +189,7 @@ export function PlanViewerWorkspace({
     : null;
 
   const calibrationMode =
-    canEditMeasurements && activeTool === "scale" && !scaleDialogOpen;
+    canEditMeasurements && activeTool === "scale" && scaleStep === "picking";
 
   const needsScaleWarning =
     ["linear", "area", "count"].includes(activeTool) &&
@@ -188,7 +201,7 @@ export function PlanViewerWorkspace({
   }, []);
 
   useEffect(() => {
-    setCenter(
+    setTakeoffSlot(
       <TakeoffToolbar
         active={activeTool}
         onChange={setActiveTool}
@@ -196,14 +209,20 @@ export function PlanViewerWorkspace({
         canCalibrateScale={canEditMeasurements}
       />
     );
-    return () => setCenter(null);
-  }, [activeTool, setCenter, canEditMeasurements]);
+    return () => setTakeoffSlot(null);
+  }, [activeTool, setTakeoffSlot, canEditMeasurements]);
 
   useEffect(() => {
-    if (activeTool !== "scale") {
-      setScaleDraft(null);
+    if (activeTool !== "scale" || !canEditMeasurements) {
+      setScaleStep("idle");
+      if (activeTool !== "scale") {
+        setScaleDraft(null);
+      }
+      return;
     }
-  }, [activeTool]);
+    setScaleStep("intro");
+    setScaleDraft(null);
+  }, [activeTool, canEditMeasurements]);
 
   useEffect(() => {
     if (!canEditMeasurements && activeTool === "scale") {
@@ -225,7 +244,11 @@ export function PlanViewerWorkspace({
         }
         setScaleDraft({ a: scaleDraft.a, b: pt });
         setPendingPdfLength(d);
-        setScaleDialogOpen(true);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setScaleStep("input");
+          });
+        });
         return;
       }
       setScaleDraft({ a: pt });
@@ -241,10 +264,9 @@ export function PlanViewerWorkspace({
         real_distance: realDistance,
         real_unit: realUnit,
       });
-      setScaleDialogOpen(false);
+      await onSheetsRefresh();
       setScaleDraft(null);
       setActiveTool("select");
-      await onSheetsRefresh();
     },
     [activeSheetId, pendingPdfLength, onSheetsRefresh]
   );
@@ -339,11 +361,17 @@ export function PlanViewerWorkspace({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <ScaleIntroDialog
+        open={scaleStep === "intro"}
+        onContinue={() => setScaleStep("picking")}
+        onCancel={() => setActiveTool("select")}
+      />
+
       <ScaleCalibrationDialog
-        open={scaleDialogOpen}
-        onOpenChange={(o) => {
-          setScaleDialogOpen(o);
-          if (!o) setScaleDraft(null);
+        open={scaleStep === "input"}
+        onCancel={() => {
+          setActiveTool("select");
+          setScaleDraft(null);
         }}
         pdfLineLengthPoints={pendingPdfLength}
         initialDistance=""
@@ -361,7 +389,7 @@ export function PlanViewerWorkspace({
       >
         <Panel
           id={PANEL_IDS[0]}
-          defaultSize="25%"
+          defaultSize="15%"
           minSize="1px"
           maxSize="100%"
           className="flex min-h-0 min-w-0 flex-col border-r border-border bg-surface"
@@ -370,33 +398,13 @@ export function PlanViewerWorkspace({
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Sheets ({planSheets.length})
             </span>
-            {plans.length > 1 && (
-              <div className="mt-2 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
-                {plans.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    title={p.filename}
-                    onClick={() => onActivePlanChange(p.id)}
-                    className={cn(
-                      "max-w-full truncate rounded-md border px-2 py-1 text-left text-[10px] font-medium transition-colors",
-                      p.id === activePlanId
-                        ? "border-primary bg-primary/10 text-foreground"
-                        : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"
-                    )}
-                  >
-                    {p.filename}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
           <div className="min-h-0 flex-1 overflow-auto p-2">
             {planSheets.length === 0 ? (
               <p className="p-2 text-xs text-muted-foreground">
                 {plans.some((p) => p.id === activePlanId)
-                  ? "No sheets for this plan yet. It may still be processing — check status in Plans below."
-                  : "No sheets yet. Upload a plan from the project panel below."}
+                  ? "No sheets for this plan yet. It may still be processing — switch plan in the top bar if needed."
+                  : "No sheets yet. Add a plan from the top bar (upload icon)."}
               </p>
             ) : (
               <ul className="flex flex-col gap-2">
@@ -455,7 +463,7 @@ export function PlanViewerWorkspace({
 
         <Panel
           id={PANEL_IDS[1]}
-          defaultSize="50%"
+          defaultSize="70%"
           minSize="1px"
           maxSize="100%"
           className="relative flex min-h-0 min-w-0 flex-col bg-background"
@@ -507,6 +515,17 @@ export function PlanViewerWorkspace({
               </Button>
             </div>
           </div>
+
+          {sheetsRefreshing && (
+            <div
+              className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground"
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" aria-hidden />
+              <span>Updating sheet data…</span>
+            </div>
+          )}
 
           {needsScaleWarning && (
             <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
@@ -593,7 +612,7 @@ export function PlanViewerWorkspace({
 
         <Panel
           id={PANEL_IDS[2]}
-          defaultSize="25%"
+          defaultSize="15%"
           minSize="1px"
           maxSize="100%"
           className="flex min-h-0 min-w-0 flex-col border-l border-border bg-surface"

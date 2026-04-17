@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -15,7 +15,7 @@ const UNITS = ["ft", "in", "m", "mm", "cm"] as const;
 
 interface ScaleCalibrationDialogProps {
   open: boolean;
-  onOpenChange: (open: boolean) => void;
+  onCancel: () => void;
   pdfLineLengthPoints: number;
   initialDistance?: string;
   initialUnit?: string;
@@ -24,7 +24,7 @@ interface ScaleCalibrationDialogProps {
 
 export function ScaleCalibrationDialog({
   open,
-  onOpenChange,
+  onCancel,
   pdfLineLengthPoints,
   initialDistance,
   initialUnit,
@@ -35,14 +35,13 @@ export function ScaleCalibrationDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleOpen = (next: boolean) => {
-    if (next) {
+  useEffect(() => {
+    if (open) {
       setDistance(initialDistance ?? "");
       setUnit(initialUnit ?? "ft");
       setError(null);
     }
-    onOpenChange(next);
-  };
+  }, [open, initialDistance, initialUnit]);
 
   async function submit() {
     setError(null);
@@ -54,7 +53,6 @@ export function ScaleCalibrationDialog({
     setBusy(true);
     try {
       await onSubmit(n, unit);
-      handleOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save scale");
     } finally {
@@ -63,10 +61,10 @@ export function ScaleCalibrationDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpen}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={open} onOpenChange={() => {}} disablePointerDismissal modal>
+      <DialogContent className="sm:max-w-md" showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>Calibrate scale</DialogTitle>
+          <DialogTitle>Enter real-world distance</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground">
           PDF segment length:{" "}
@@ -112,16 +110,11 @@ export function ScaleCalibrationDialog({
           </p>
         )}
         <DialogFooter>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => handleOpen(false)}
-            disabled={busy}
-          >
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
             Cancel
           </Button>
           <Button type="button" onClick={() => void submit()} disabled={busy}>
-            {busy ? "Saving…" : "Apply scale"}
+            {busy ? "Saving..." : "Save scale"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -120,6 +120,8 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [pageCssSize, setPageCssSize] = useState({ w: 0, h: 0 });
     const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
+    /** Mirrors the last rendered page viewport so scale overlay re-renders when ref alone updates. */
+    const [pageViewport, setPageViewport] = useState<PageViewport | null>(null);
     const [searchRects, setSearchRects] = useState<ViewportRect[]>([]);
 
     useEffect(() => {
@@ -129,6 +131,7 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
     useEffect(() => {
       pdfRef.current = null;
       setPdfError(null);
+      setPageViewport(null);
       if (!documentUrl) return;
 
       let cancelled = false;
@@ -238,6 +241,7 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
       const effectiveScale = fitScale * zm;
       const viewport = page.getViewport({ scale: effectiveScale });
       viewportRef.current = viewport;
+      setPageViewport(viewport);
 
       setPageCssSize({ w: viewport.width, h: viewport.height });
 
@@ -485,13 +489,18 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
       }
     };
 
-    const vp = viewportRef.current;
+    const vp = pageViewport;
     let scaleLine: { x1: number; y1: number; x2: number; y2: number } | null = null;
-    if (scaleDraftPdf?.a && vp) {
+    let scalePoints: { x: number; y: number }[] = [];
+    if (scaleDraftPdf?.a && vp && pageCssSize.w > 0 && pageCssSize.h > 0) {
       const v1 = vp.convertToViewportPoint(scaleDraftPdf.a.x, scaleDraftPdf.a.y);
       const b = scaleDraftPdf.b ?? scaleDraftPdf.a;
       const v2 = vp.convertToViewportPoint(b.x, b.y);
       scaleLine = { x1: v1[0], y1: v1[1], x2: v2[0], y2: v2[1] };
+      scalePoints = [{ x: v1[0], y: v1[1] }];
+      if (scaleDraftPdf.b) {
+        scalePoints.push({ x: v2[0], y: v2[1] });
+      }
     }
 
     return (
@@ -528,7 +537,7 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
           <canvas ref={canvasRef} className="block bg-white shadow-sm" />
           {scaleLine && (
             <svg
-              className="pointer-events-none absolute left-0 top-0"
+              className="pointer-events-none absolute left-0 top-0 z-[1]"
               width={pageCssSize.w}
               height={pageCssSize.h}
               aria-hidden
@@ -540,7 +549,19 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
                 y2={scaleLine.y2}
                 stroke="hsl(var(--primary))"
                 strokeWidth={2}
+                strokeLinecap="round"
               />
+              {scalePoints.map((p, i) => (
+                <circle
+                  key={i}
+                  cx={p.x}
+                  cy={p.y}
+                  r={5}
+                  fill="hsl(var(--primary))"
+                  stroke="hsl(var(--background))"
+                  strokeWidth={2}
+                />
+              ))}
             </svg>
           )}
           {searchRects.map((r, i) => {

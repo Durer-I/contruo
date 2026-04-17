@@ -80,13 +80,13 @@ export function TopBar() {
               </>
             )}
             <DropdownMenuItem
-              render={<Link href="/settings/account" />}
+              render={<Link href="/settings/account" className="cursor-pointer" />}
             >
               <Settings className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => signOut()}>
+            <DropdownMenuItem className="cursor-pointer" onClick={() => signOut()}>
               <LogOut className="mr-2 h-4 w-4" />
               Log out
             </DropdownMenuItem>

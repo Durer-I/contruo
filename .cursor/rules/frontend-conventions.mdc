@@ -10,6 +10,7 @@ alwaysApply: false
 - Use shadcn/ui components customized with the Contruo dark theme (see `docs/design/design-system.md`)
 - Use Lucide Icons (16px inline, 20px nav, 24px features)
 - Font: Inter for UI, JetBrains Mono for formulas/measurement values
+- Make sure the design is UI/UX friendly
 
 ## Styling
 
