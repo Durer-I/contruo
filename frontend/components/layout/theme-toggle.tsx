@@ -44,23 +44,25 @@ export function ThemeToggle({ collapsed }: ThemeToggleProps) {
 
   if (collapsed) {
     return (
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="w-full justify-center px-3"
-              onClick={() => setTheme(isDark ? "light" : "dark")}
-              aria-label={nextLabel}
-            />
-          }
-        >
-          {icon}
-        </TooltipTrigger>
-        <TooltipContent side="right">{nextLabel}</TooltipContent>
-      </Tooltip>
+      <div className="flex justify-center">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="h-8 w-8 shrink-0 p-0"
+                onClick={() => setTheme(isDark ? "light" : "dark")}
+                aria-label={nextLabel}
+              />
+            }
+          >
+            {icon}
+          </TooltipTrigger>
+          <TooltipContent side="right">{nextLabel}</TooltipContent>
+        </Tooltip>
+      </div>
     );
   }
 

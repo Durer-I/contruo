@@ -46,12 +46,49 @@ export function Sidebar() {
 
   const width = collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
 
+  const navItemClass = (isActive: boolean) =>
+    cn(
+      "flex items-center rounded-md text-sm font-medium transition-colors",
+      collapsed
+        ? "h-8 w-8 shrink-0 justify-center px-0 py-0"
+        : "gap-3 px-3 py-2",
+      isActive
+        ? collapsed
+          ? "bg-surface-overlay text-foreground ring-1 ring-inset ring-primary/60"
+          : "bg-surface-overlay text-foreground border-l-2 border-primary"
+        : "text-muted-foreground hover:bg-surface-overlay hover:text-foreground"
+    );
+
   return (
     <aside
       className="flex h-full flex-col border-r border-border bg-surface transition-[width] duration-200"
       style={{ width }}
     >
-      <nav className="flex flex-1 flex-col gap-1 p-2">
+      {/* Collapse — top right */}
+      <div
+        className={cn(
+          "flex shrink-0 items-center justify-end border-b border-border py-2",
+          collapsed ? "pr-1 pl-0.5" : "px-2"
+        )}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className={cn("shrink-0", collapsed && "size-8")}
+          onClick={() => setCollapsed(!collapsed)}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? (
+            <PanelLeft className="h-4 w-4" />
+          ) : (
+            <PanelLeftClose className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+
+      <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
         {visibleItems.map((item) => {
           const isActive =
             pathname === item.href ||
@@ -62,12 +99,7 @@ export function Sidebar() {
             <Link
               key={item.id}
               href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-surface-overlay text-foreground border-l-2 border-primary"
-                  : "text-muted-foreground hover:bg-surface-overlay hover:text-foreground"
-              )}
+              className={navItemClass(isActive)}
             >
               <Icon className="h-5 w-5 shrink-0" />
               {!collapsed && <span>{item.label}</span>}
@@ -76,24 +108,21 @@ export function Sidebar() {
 
           if (collapsed) {
             return (
-              <Tooltip key={item.id}>
-                <TooltipTrigger
-                  render={
-                    <Link
-                      href={item.href}
-                      className={cn(
-                        "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                        isActive
-                          ? "bg-surface-overlay text-foreground border-l-2 border-primary"
-                          : "text-muted-foreground hover:bg-surface-overlay hover:text-foreground"
-                      )}
-                    />
-                  }
-                >
-                  <Icon className="h-5 w-5 shrink-0" />
-                </TooltipTrigger>
-                <TooltipContent side="right">{item.label}</TooltipContent>
-              </Tooltip>
+              <div key={item.id} className="flex justify-center">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Link
+                        href={item.href}
+                        className={navItemClass(isActive)}
+                      />
+                    }
+                  >
+                    <Icon className="h-5 w-5 shrink-0" />
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{item.label}</TooltipContent>
+                </Tooltip>
+              </div>
             );
           }
 
@@ -101,24 +130,8 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Theme + collapse */}
-      <div className="space-y-1 border-t border-border p-2">
+      <div className="shrink-0 border-t border-border p-2">
         <ThemeToggle collapsed={collapsed} />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-center"
-          onClick={() => setCollapsed(!collapsed)}
-        >
-          {collapsed ? (
-            <PanelLeft className="h-4 w-4" />
-          ) : (
-            <>
-              <PanelLeftClose className="mr-2 h-4 w-4" />
-              <span className="text-xs text-muted-foreground">Collapse</span>
-            </>
-          )}
-        </Button>
       </div>
     </aside>
   );

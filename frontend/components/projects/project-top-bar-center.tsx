@@ -87,13 +87,13 @@ function ProjectTopBarCenterInner({
       )}
 
       {takeoffSlot && showPlanUploadBar && (
-        <div className="h-6 w-px shrink-0 bg-border" aria-hidden />
+        <div className="h-8 w-0.5 shrink-0 bg-border" aria-hidden />
       )}
 
       {showPlanUploadBar && (
         <div
           className={cn(
-            "flex min-w-0 max-w-[min(100vw-12rem,28rem)] shrink-0 items-center gap-0.5 rounded-lg border border-border bg-card/80 p-0.5",
+            "flex min-w-0 max-w-[min(100vw-12rem,28rem)] shrink-0 items-center gap-0.5 rounded-2xl border border-border bg-card/80 p-0.5",
             "shadow-sm"
           )}
         >
@@ -102,7 +102,7 @@ function ProjectTopBarCenterInner({
               <DropdownMenuTrigger
                 type="button"
                 className={cn(
-                  "flex h-8 min-w-0 max-w-[min(100%,14rem)] items-center gap-1 rounded-md px-2 text-left text-xs font-medium",
+                  "flex h-8 min-w-0 max-w-[min(100%,14rem)] items-center gap-1 rounded-2xl px-2 text-left text-xs font-medium",
                   "text-foreground outline-none hover:bg-surface-overlay",
                   "focus-visible:ring-2 focus-visible:ring-primary/40"
                 )}
