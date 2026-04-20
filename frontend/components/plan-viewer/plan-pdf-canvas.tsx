@@ -57,6 +57,75 @@ export interface PlanPdfCanvasHandle {
   zoomOut: () => void;
   clientToPdfPoint: (clientX: number, clientY: number) => PdfPoint | null;
   pdfPointsDistance: (a: PdfPoint, b: PdfPoint) => number;
+  /** Map PDF user-space point to viewport pixels (same space as canvas/CSS overlay). */
+  pdfToViewportPixel: (p: PdfPoint) => { x: number; y: number } | null;
+}
+
+export type LineStyleDash = "solid" | "dashed" | "dotted";
+
+export interface LinearOverlayPolyline {
+  id: string;
+  vertices: PdfPoint[];
+  color: string;
+  lineWidth: number;
+  dash: LineStyleDash;
+  /** Thicker stroke when measurement is selected (select tool). */
+  emphasize?: boolean;
+}
+
+export interface LinearTakeoffHandlers {
+  active: boolean;
+  onPdfPoint: (pt: PdfPoint) => void;
+  onHoverPdf: (pt: PdfPoint | null) => void;
+  onComplete: () => void;
+}
+
+export interface AreaOverlaySaved {
+  id: string;
+  outer: PdfPoint[];
+  holes: PdfPoint[][];
+  color: string;
+  fillOpacity: number;
+  lineWidth: number;
+  fillPattern: "solid" | "hatch" | "crosshatch";
+  label?: string;
+  emphasize?: boolean;
+}
+
+export interface CountMarkerOverlay {
+  id: string;
+  /** PDF user-space coordinates (same as geometry.position). */
+  x: number;
+  y: number;
+  color: string;
+  emphasize?: boolean;
+  /** True while POST is in flight — shown immediately on click. */
+  pending?: boolean;
+  onPointerDown?: (e: React.PointerEvent<SVGCircleElement>) => void;
+}
+
+function dashPattern(d: LineStyleDash): string | undefined {
+  if (d === "solid") return undefined;
+  if (d === "dashed") return "8 6";
+  return "2 5";
+}
+
+function pdfRingsToViewPath(vp: PageViewport, rings: PdfPoint[][]): string {
+  const parts: string[] = [];
+  for (const ring of rings) {
+    if (ring.length < 2) continue;
+    const pts = ring.map((p) => {
+      const [vx, vy] = vp.convertToViewportPoint(p.x, p.y);
+      return [vx, vy] as const;
+    });
+    let d = `M ${pts[0]![0]} ${pts[0]![1]}`;
+    for (let i = 1; i < pts.length; i++) {
+      d += ` L ${pts[i]![0]} ${pts[i]![1]}`;
+    }
+    d += " Z";
+    parts.push(d);
+  }
+  return parts.join(" ");
 }
 
 interface PlanPdfCanvasProps {
@@ -74,6 +143,49 @@ interface PlanPdfCanvasProps {
   /** Which match to center on (0-based). */
   searchMatchIndex?: number;
   onSearchRectsChange?: (count: number) => void;
+  /** Linear takeoff: click adds vertices; double-click / parent completes. */
+  linearTakeoff?: LinearTakeoffHandlers | null;
+  /** Select tool: left-click in PDF space (e.g. hit-test measurements). */
+  selectToolProbe?: {
+    active: boolean;
+    onPdfClick: (
+      pt: PdfPoint,
+      modifiers: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }
+    ) => void;
+  } | null;
+  /** Draw saved measurements + in-progress draft (PDF coordinates). */
+  linearOverlay?: {
+    polylines: LinearOverlayPolyline[];
+    draft?: {
+      vertices: PdfPoint[];
+      preview: PdfPoint | null;
+      color: string;
+      lineWidth: number;
+      dash: LineStyleDash;
+    } | null;
+    vertexHandles?: {
+      vertices: PdfPoint[];
+      onVertexPointerDown: (index: number, e: React.PointerEvent<SVGCircleElement>) => void;
+    } | null;
+  } | null;
+  /** Area polygon: same interaction model as linear (click chain + double-click / Enter completes). */
+  areaPolygonTakeoff?: LinearTakeoffHandlers | null;
+  /** Count takeoff: each full primary-button click (pointer up) places one marker — no Enter. */
+  countTakeoff?: { active: boolean; onPdfClick: (pt: PdfPoint) => void } | null;
+  /** Filled polygons + optional polygon draft (outer or hole stroke). */
+  areaOverlay?: {
+    areas: AreaOverlaySaved[];
+    polygonDraft?: {
+      vertices: PdfPoint[];
+      preview: PdfPoint | null;
+      color: string;
+      fillOpacity: number;
+      lineWidth: number;
+      dashed?: boolean;
+    } | null;
+  } | null;
+  /** Count markers (viewport draws on top). */
+  countOverlay?: CountMarkerOverlay[] | null;
 }
 
 export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>(
@@ -90,6 +202,13 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
       searchQuery,
       searchMatchIndex = 0,
       onSearchRectsChange,
+      linearTakeoff = null,
+      linearOverlay = null,
+      selectToolProbe = null,
+      areaPolygonTakeoff = null,
+      countTakeoff = null,
+      areaOverlay = null,
+      countOverlay = null,
     },
     ref
   ) {
@@ -420,6 +539,12 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
         clientToPdfPoint,
         pdfPointsDistance: (a: PdfPoint, b: PdfPoint) =>
           Math.hypot(a.x - b.x, a.y - b.y),
+        pdfToViewportPixel: (p: PdfPoint) => {
+          const vp = viewportRef.current;
+          if (!vp) return null;
+          const [vx, vy] = vp.convertToViewportPoint(p.x, p.y);
+          return { x: vx, y: vy };
+        },
       }),
       [pageNumber, runWheelZoom, clientToPdfPoint]
     );
@@ -460,6 +585,49 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
         }
       }
 
+      if (
+        areaPolygonTakeoff?.active &&
+        e.button === 0 &&
+        !spaceDownRef.current
+      ) {
+        const pt = clientToPdfPoint(e.clientX, e.clientY);
+        if (pt) {
+          e.preventDefault();
+          areaPolygonTakeoff.onPdfPoint(pt);
+          return;
+        }
+      }
+
+      if (
+        linearTakeoff?.active &&
+        e.button === 0 &&
+        !spaceDownRef.current
+      ) {
+        const pt = clientToPdfPoint(e.clientX, e.clientY);
+        if (pt) {
+          e.preventDefault();
+          linearTakeoff.onPdfPoint(pt);
+          return;
+        }
+      }
+
+      if (
+        selectToolProbe?.active &&
+        e.button === 0 &&
+        !spaceDownRef.current
+      ) {
+        const pt = clientToPdfPoint(e.clientX, e.clientY);
+        if (pt) {
+          e.preventDefault();
+          selectToolProbe.onPdfClick(pt, {
+            ctrlKey: e.ctrlKey,
+            metaKey: e.metaKey,
+            shiftKey: e.shiftKey,
+          });
+          return;
+        }
+      }
+
       const isMiddle = e.button === 1;
       const isLeftSpace = e.button === 0 && spaceDownRef.current;
       if (!isMiddle && !isLeftSpace) return;
@@ -473,6 +641,14 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
     };
 
     const onPointerMove = (e: React.PointerEvent) => {
+      if (areaPolygonTakeoff?.active) {
+        const pt = clientToPdfPoint(e.clientX, e.clientY);
+        areaPolygonTakeoff.onHoverPdf(pt);
+      }
+      if (linearTakeoff?.active) {
+        const pt = clientToPdfPoint(e.clientX, e.clientY);
+        linearTakeoff.onHoverPdf(pt);
+      }
       const p = panningRef.current;
       if (!p || p.pointerId !== e.pointerId) return;
       const dx = e.clientX - p.lastX;
@@ -483,6 +659,17 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
     };
 
     const onPointerUp = (e: React.PointerEvent) => {
+      if (
+        countTakeoff?.active &&
+        e.button === 0 &&
+        !spaceDownRef.current
+      ) {
+        const pt = clientToPdfPoint(e.clientX, e.clientY);
+        if (pt) {
+          e.preventDefault();
+          countTakeoff.onPdfClick(pt);
+        }
+      }
       const p = panningRef.current;
       if (p && p.pointerId === e.pointerId) {
         panningRef.current = null;
@@ -507,13 +694,31 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
       <div
         ref={containerRef}
         className={`relative min-h-[200px] flex-1 overflow-hidden bg-muted/20 ${
-          calibrationMode ? "cursor-crosshair" : ""
+          calibrationMode ||
+          linearTakeoff?.active ||
+          areaPolygonTakeoff?.active ||
+          countTakeoff?.active
+            ? "cursor-crosshair"
+            : selectToolProbe?.active
+              ? "cursor-default"
+              : ""
         } ${className ?? ""}`}
         onWheel={onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onDoubleClick={(e) => {
+          if (areaPolygonTakeoff?.active) {
+            e.preventDefault();
+            areaPolygonTakeoff.onComplete();
+            return;
+          }
+          if (linearTakeoff?.active) {
+            e.preventDefault();
+            linearTakeoff.onComplete();
+          }
+        }}
         role="application"
         aria-label="Plan PDF viewport"
       >
@@ -587,6 +792,235 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
               />
             );
           })}
+          {vp && pageCssSize.w > 0 && areaOverlay ? (
+            <svg
+              className="absolute left-0 top-0 z-[1]"
+              width={pageCssSize.w}
+              height={pageCssSize.h}
+              aria-hidden
+              style={{ pointerEvents: "none" }}
+            >
+              {(areaOverlay?.areas ?? []).map((ar) => {
+                const rings = [ar.outer, ...ar.holes];
+                const d = pdfRingsToViewPath(vp, rings);
+                if (!d) return null;
+                const fillOp =
+                  ar.fillPattern === "solid"
+                    ? ar.fillOpacity * 0.35
+                    : ar.fillOpacity * 0.28;
+                return (
+                  <g key={ar.id}>
+                    <path
+                      d={d}
+                      fill={ar.color}
+                      fillOpacity={fillOp}
+                      fillRule="evenodd"
+                      stroke={ar.color}
+                      strokeWidth={ar.emphasize ? ar.lineWidth + 2 : ar.lineWidth}
+                      strokeOpacity={0.95}
+                    />
+                    {ar.label ? (() => {
+                      let cx = 0;
+                      let cy = 0;
+                      for (const p of ar.outer) {
+                        cx += p.x;
+                        cy += p.y;
+                      }
+                      cx /= ar.outer.length;
+                      cy /= ar.outer.length;
+                      const [vx, vy] = vp.convertToViewportPoint(cx, cy);
+                      return (
+                        <text
+                          x={vx}
+                          y={vy}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fill="hsl(var(--foreground))"
+                          fontSize={11}
+                          fontWeight={600}
+                          stroke="hsl(var(--background))"
+                          strokeWidth={3}
+                          paintOrder="stroke"
+                          style={{ pointerEvents: "none" }}
+                        >
+                          {ar.label}
+                        </text>
+                      );
+                    })() : null}
+                  </g>
+                );
+              })}
+              {areaOverlay?.polygonDraft && areaOverlay.polygonDraft.vertices.length > 0
+                ? (() => {
+                    const dr = areaOverlay.polygonDraft;
+                    const pts = dr.vertices
+                      .map((p) => {
+                        const [vx, vy] = vp.convertToViewportPoint(p.x, p.y);
+                        return `${vx},${vy}`;
+                      })
+                      .join(" ");
+                    const last = dr.vertices[dr.vertices.length - 1]!;
+                    const [lx, ly] = vp.convertToViewportPoint(last.x, last.y);
+                    return (
+                      <>
+                        <polyline
+                          fill="none"
+                          stroke={dr.color}
+                          strokeWidth={dr.lineWidth}
+                          strokeDasharray={dr.dashed ? "6 4" : undefined}
+                          strokeOpacity={0.95}
+                          points={pts}
+                        />
+                        {dr.preview ? (
+                          <line
+                            x1={lx}
+                            y1={ly}
+                            x2={vp.convertToViewportPoint(dr.preview.x, dr.preview.y)[0]}
+                            y2={vp.convertToViewportPoint(dr.preview.x, dr.preview.y)[1]}
+                            stroke={dr.color}
+                            strokeWidth={Math.max(1, dr.lineWidth - 0.5)}
+                            strokeOpacity={0.65}
+                            strokeDasharray="4 4"
+                          />
+                        ) : null}
+                      </>
+                    );
+                  })()
+                : null}
+            </svg>
+          ) : null}
+          {vp && pageCssSize.w > 0 && linearOverlay ? (
+            <svg
+              className="absolute left-0 top-0 z-[2]"
+              width={pageCssSize.w}
+              height={pageCssSize.h}
+              aria-hidden
+              style={{ pointerEvents: "none" }}
+            >
+              {linearOverlay.polylines.map((pl) => {
+                if (pl.vertices.length < 2) return null;
+                const pts = pl.vertices
+                  .map((p) => {
+                    const [vx, vy] = vp.convertToViewportPoint(p.x, p.y);
+                    return `${vx},${vy}`;
+                  })
+                  .join(" ");
+                const dash = dashPattern(pl.dash);
+                return (
+                  <polyline
+                    key={pl.id}
+                    fill="none"
+                    stroke={pl.color}
+                    strokeWidth={pl.emphasize ? pl.lineWidth + 2 : pl.lineWidth}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeOpacity={0.92}
+                    strokeDasharray={dash}
+                    points={pts}
+                    style={{ pointerEvents: "none" }}
+                  />
+                );
+              })}
+              {linearOverlay.draft && linearOverlay.draft.vertices.length > 0
+                ? (() => {
+                    const d = linearOverlay.draft;
+                    const pts = d.vertices
+                      .map((p) => {
+                        const [vx, vy] = vp.convertToViewportPoint(p.x, p.y);
+                        return `${vx},${vy}`;
+                      })
+                      .join(" ");
+                    const dash = dashPattern(d.dash);
+                    const last = d.vertices[d.vertices.length - 1]!;
+                    const [lx, ly] = vp.convertToViewportPoint(last.x, last.y);
+                    return (
+                      <>
+                        <polyline
+                          fill="none"
+                          stroke={d.color}
+                          strokeWidth={d.lineWidth}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeOpacity={0.95}
+                          strokeDasharray={dash}
+                          points={pts}
+                          style={{ pointerEvents: "none" }}
+                        />
+                        {d.preview ? (
+                          <line
+                            x1={lx}
+                            y1={ly}
+                            x2={vp.convertToViewportPoint(d.preview.x, d.preview.y)[0]}
+                            y2={vp.convertToViewportPoint(d.preview.x, d.preview.y)[1]}
+                            stroke={d.color}
+                            strokeWidth={Math.max(1, d.lineWidth - 0.5)}
+                            strokeOpacity={0.65}
+                            strokeDasharray="4 4"
+                            style={{ pointerEvents: "none" }}
+                          />
+                        ) : null}
+                      </>
+                    );
+                  })()
+                : null}
+              {linearOverlay.vertexHandles
+                ? linearOverlay.vertexHandles.vertices.map((v, i) => {
+                    const [cx, cy] = vp.convertToViewportPoint(v.x, v.y);
+                    return (
+                      <circle
+                        key={`vh-${i}`}
+                        cx={cx}
+                        cy={cy}
+                        r={7}
+                        fill="hsl(var(--background))"
+                        stroke="hsl(var(--primary))"
+                        strokeWidth={2}
+                        className="cursor-grab active:cursor-grabbing"
+                        style={{ pointerEvents: "auto" }}
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          linearOverlay.vertexHandles?.onVertexPointerDown(i, e);
+                        }}
+                      />
+                    );
+                  })
+                : null}
+            </svg>
+          ) : null}
+          {vp && pageCssSize.w > 0 && countOverlay && countOverlay.length > 0 ? (
+            <svg
+              className="absolute left-0 top-0 z-[3]"
+              width={pageCssSize.w}
+              height={pageCssSize.h}
+              aria-hidden
+              style={{
+                pointerEvents: countOverlay.some((m) => m.onPointerDown)
+                  ? "auto"
+                  : "none",
+              }}
+            >
+              {countOverlay.map((m) => {
+                const [vx, vy] = vp.convertToViewportPoint(m.x, m.y);
+                return (
+                  <circle
+                    key={m.id}
+                    cx={vx}
+                    cy={vy}
+                    r={m.emphasize ? 10 : 8}
+                    fill={m.color}
+                    fillOpacity={m.pending ? 0.72 : 0.92}
+                    stroke="hsl(var(--background))"
+                    strokeWidth={m.emphasize ? 2.5 : 1.5}
+                    strokeDasharray={m.pending ? "4 3" : undefined}
+                    className={m.onPointerDown ? "cursor-grab active:cursor-grabbing" : undefined}
+                    style={{ pointerEvents: m.onPointerDown ? "auto" : "none" }}
+                    onPointerDown={m.onPointerDown}
+                  />
+                );
+              })}
+            </svg>
+          ) : null}
         </div>
       </div>
     );

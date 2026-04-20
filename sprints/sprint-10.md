@@ -2,7 +2,7 @@
 
 > **Phase:** 3 - Takeoff Tools
 > **Duration:** 2 weeks
-> **Status:** Not Started
+> **Status:** Partial (core shipped; polish deferred)
 > **Depends On:** Sprint 07 (conditions), Sprint 09 (all measurement types working)
 
 ## Sprint Goal
@@ -14,82 +14,81 @@ Build the formula engine and assembly items system. At the end of this sprint, u
 ## Tasks
 
 ### 1. Formula Engine
-- [ ] Create `formula_engine.py` module (shared service)
-- [ ] Implement expression parser supporting:
+- [x] Create `formula_engine.py` module (shared service) — `app/services/formula_engine.py`
+- [x] Implement expression parser supporting:
   - Arithmetic operators: `+`, `-`, `*`, `/`, `^`, `()`
   - Functions: `round()`, `ceil()`, `floor()`, `min()`, `max()`, `abs()`
   - Variable resolution from a provided context dictionary
-- [ ] Evaluate library options: `py_expression_eval`, `simpleeval`, or custom tokenizer
-- [ ] Variable injection: `length`, `area`, `count`, `perimeter` + custom condition properties
-- [ ] Comprehensive error handling: syntax errors, missing variables, division by zero
-- [ ] Unit tests for the formula engine (edge cases, complex expressions)
+- [x] Evaluate via restricted **AST** (no third-party eval dependency)
+- [x] Variable injection: `length`, `area`, `count`, `perimeter` + custom condition properties (sanitized names)
+- [x] Comprehensive error handling: syntax errors, missing variables, division by zero
+- [x] Unit tests for the formula engine (`tests/unit/test_formula_engine.py`)
 
 ### 2. Assembly Items CRUD
-- [ ] Create `assembly_items` table migration (with `parent_id` for future nesting)
-- [ ] Implement API endpoints:
-  - `POST /api/v1/conditions/:id/assembly-items` -- add assembly item
-  - `PATCH /api/v1/assembly-items/:id` -- update assembly item
-  - `DELETE /api/v1/assembly-items/:id` -- delete assembly item
-  - `GET /api/v1/conditions/:id/assembly-items` -- list assembly items
-- [ ] RLS policies on assembly_items table
+- [x] Create `assembly_items` table migration (with `parent_id` for future nesting) — Alembic `006`
+- [x] Implement API endpoints:
+  - `POST /api/v1/conditions/:id/assembly-items`
+  - `PATCH /api/v1/assembly-items/:id`
+  - `DELETE /api/v1/assembly-items/:id`
+  - `GET /api/v1/conditions/:id/assembly-items`
+  - `POST /api/v1/conditions/:id/assembly-formula-preview` (live preview)
+- [x] RLS policies on `assembly_items` table (migration)
 
 ### 3. Assembly Items UI (Condition Manager)
-- [ ] Add assembly items section to the condition manager detail view
-- [ ] Assembly items table: item name | unit | formula | (calculated preview)
-- [ ] "Add Item" button to add a new row
-- [ ] Inline editing for item name, unit, and formula
-- [ ] Delete button per row
-- [ ] Drag to reorder items (sort_order)
+- [x] Add assembly items section to the condition manager detail view
+- [x] Assembly items table: item name | unit | formula | preview
+- [x] "Add Item" button to add a new row
+- [x] Inline editing for item name, unit, and formula (save on blur)
+- [x] Delete button per row
+- [ ] Drag to reorder items (`sort_order`) — **deferred** (PATCH `sort_order` supported)
 
 ### 4. Formula Editor
-- [ ] Text input field for formulas with syntax highlighting
-- [ ] Autocomplete dropdown for available variables:
-  - Measurement variable (`length`, `area`, `count` depending on condition type)
-  - `perimeter` (for area conditions)
-  - Custom properties from the condition (e.g., `height`, `spacing`, `depth`)
-- [ ] Live preview: show calculated result using a sample measurement value
-- [ ] Validation feedback: show error message inline if formula is invalid
-- [ ] Variables panel: small reference showing available variables and their current values
+- [x] Text input field for formulas
+- [ ] Syntax highlighting — **deferred**
+- [x] Variables reference (inline help + preview API uses saved condition properties)
+- [x] Live preview: `assembly-formula-preview` with sample primary (and perimeter for area)
+- [x] Validation feedback: preview shows error string from engine
+- [x] Variables panel: short reference in assembly section
 
 ### 5. Derived Quantity Calculation
-- [ ] When a measurement is created or edited, evaluate all assembly item formulas
-- [ ] Store derived quantities as computed values (not persisted -- recalculated on demand)
-- [ ] When a condition property changes, recalculate all derived quantities for measurements using that condition
-- [ ] API endpoint returns measurements with their derived quantities included
-- [ ] Handle formula errors gracefully: show "Error" instead of crashing
+- [x] When a measurement is created or edited, evaluate all assembly item formulas (on read)
+- [x] Store derived quantities as computed values (not persisted — recalculated on demand)
+- [x] When a condition property changes, next measurement fetch recalculates derived quantities
+- [x] API returns measurements with `derived_quantities` on each `MeasurementResponse`
+- [x] Handle formula errors gracefully: `error` string per item instead of crashing
 
 ### 6. Condition Templates (Org Library)
-- [ ] Create `condition_templates` table migration
-- [ ] Implement API endpoints:
-  - `GET /api/v1/org/templates` -- list templates
-  - `POST /api/v1/org/templates` -- create template (from existing condition or from scratch)
-  - `DELETE /api/v1/org/templates/:id` -- delete template
-  - `POST /api/v1/projects/:id/conditions/import` -- import template into project (deep copy)
-- [ ] "Save as Template" action on any project condition
-- [ ] "Import from Templates" button in the condition manager
-- [ ] Template browser: list of org templates with name, type, assembly item count
-- [ ] Import creates an independent copy (no linking)
+- [x] Create `condition_templates` table migration
+- [x] Implement API endpoints:
+  - `GET /api/v1/org/condition-templates`
+  - `POST /api/v1/org/conditions/:id/save-as-template`
+  - `DELETE /api/v1/org/condition-templates/:id`
+  - `POST /api/v1/projects/:id/conditions/import-from-template`
+- [x] "Save as Template" on project condition
+- [x] "Import from Templates" in condition manager (dialog)
+- [x] Template list shows name, type, assembly item count
+- [x] Import creates an independent copy (condition + assembly rows)
 
 ### 7. Condition Reassignment
-- [ ] Select a measurement -> "Change Condition" in context menu or properties panel
-- [ ] Dropdown showing compatible conditions (same measurement type only)
-- [ ] On reassignment: re-style the measurement, recalculate all assembly quantities
-- [ ] Log event: `measurement.edited` with condition change details
+- [x] Select a measurement (select tool) → "Change condition" strip above footer
+- [x] Dropdown showing compatible conditions (same measurement type only)
+- [x] On reassignment: `PATCH` with `condition_id`, recompute `measured_value`, restyle via refetch
+- [x] Log event: `measurement.edited` with fields including `condition_id`
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] Formula engine correctly evaluates expressions with variables and functions
-- [ ] Users can add assembly items to conditions with name, unit, and formula
-- [ ] Formula editor provides autocomplete for available variables
-- [ ] Live preview shows the calculated result for a sample value
-- [ ] Invalid formulas show clear error messages
-- [ ] When a measurement is created, all assembly item quantities are calculated
-- [ ] When a condition property changes, derived quantities update for all affected measurements
-- [ ] Users can save a condition as an org template
-- [ ] Users can import a template into a project (creates an independent copy)
-- [ ] Users can reassign a measurement to a different condition of the same type
+- [x] Formula engine correctly evaluates expressions with variables and functions
+- [x] Users can add assembly items to conditions with name, unit, and formula
+- [ ] Formula editor autocomplete — **deferred** (help text + preview only)
+- [x] Live preview shows the calculated result for a sample value
+- [x] Invalid formulas show clear error messages (preview + derived list)
+- [x] When a measurement is created, all assembly item quantities are calculated on response
+- [x] When a condition property changes, derived quantities update on next load
+- [x] Users can save a condition as an org template
+- [x] Users can import a template into a project (independent copy)
+- [x] Users can reassign a measurement to a different condition of the same type
 
 ---
 

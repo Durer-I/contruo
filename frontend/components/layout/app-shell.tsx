@@ -2,6 +2,7 @@
 
 import { TopBarCenterProvider } from "@/providers/top-bar-center-provider";
 import { TakeoffToolbarSlotProvider } from "@/providers/takeoff-toolbar-slot-provider";
+import { StatusBarSlotProvider } from "@/providers/status-bar-slot-provider";
 import { TopBar } from "./top-bar";
 import { Sidebar } from "./sidebar";
 import { StatusBar } from "./status-bar";
@@ -10,6 +11,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <TopBarCenterProvider>
       <TakeoffToolbarSlotProvider>
+        <StatusBarSlotProvider>
         <div className="flex h-screen flex-col overflow-hidden">
           <TopBar />
           <div className="flex flex-1 overflow-hidden">
@@ -18,6 +20,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <StatusBar />
         </div>
+        </StatusBarSlotProvider>
       </TakeoffToolbarSlotProvider>
     </TopBarCenterProvider>
   );

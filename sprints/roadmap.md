@@ -2,7 +2,7 @@
 
 > **Sprint Duration:** 2 weeks each
 > **Total Sprints:** 16
-> **Estimated Timeline:** ~32 weeks (~7.5 months)
+> **Estimated Timeline:** ~~32 weeks (~~7.5 months)
 > **Methodology:** Agile sprints with deliverables at the end of each
 
 ---
@@ -11,11 +11,13 @@
 
 Build the platform foundation -- authentication, user management, and organization structure. At the end of this phase, users can sign up, create an org, invite team members, and manage roles.
 
-| Sprint | Focus | Key Deliverable |
-|--------|-------|-----------------|
-| [Sprint 01](sprint-01.md) | Project scaffolding | Repo, CI/CD, dev environment, Supabase connected |
-| [Sprint 02](sprint-02.md) | Auth & user management | Signup, login, email verification, password reset |
+
+| Sprint                    | Focus                   | Key Deliverable                                          |
+| ------------------------- | ----------------------- | -------------------------------------------------------- |
+| [Sprint 01](sprint-01.md) | Project scaffolding     | Repo, CI/CD, dev environment, Supabase connected         |
+| [Sprint 02](sprint-02.md) | Auth & user management  | Signup, login, email verification, password reset        |
 | [Sprint 03](sprint-03.md) | Organization management | Org creation, settings, invitations, roles & permissions |
+
 
 ---
 
@@ -23,11 +25,13 @@ Build the platform foundation -- authentication, user management, and organizati
 
 Build the plan viewer -- the core canvas where all takeoff work happens. At the end of this phase, users can upload PDF plans, view them with full zoom/pan, navigate sheets, calibrate scale, and search text.
 
-| Sprint | Focus | Key Deliverable |
-|--------|-------|-----------------|
-| [Sprint 04](sprint-04.md) | Plan upload & PDF processing | Upload flow, async processing, sheet extraction |
-| [Sprint 05](sprint-05.md) | Plan viewer core | PDF rendering, zoom/pan, sheet index, thumbnails |
-| [Sprint 06](sprint-06.md) | Scale calibration & text search | Manual + auto scale, text search across sheets |
+
+| Sprint                    | Focus                           | Key Deliverable                                  |
+| ------------------------- | ------------------------------- | ------------------------------------------------ |
+| [Sprint 04](sprint-04.md) | Plan upload & PDF processing    | Upload flow, async processing, sheet extraction  |
+| [Sprint 05](sprint-05.md) | Plan viewer core                | PDF rendering, zoom/pan, sheet index, thumbnails |
+| [Sprint 06](sprint-06.md) | Scale calibration & text search | Manual + auto scale, text search across sheets   |
+
 
 ---
 
@@ -35,12 +39,14 @@ Build the plan viewer -- the core canvas where all takeoff work happens. At the 
 
 Build the measurement tools and the conditions/assemblies system. At the end of this phase, users can create conditions, draw linear/area/count measurements on plans, define assembly formulas, and see derived quantities.
 
-| Sprint | Focus | Key Deliverable |
-|--------|-------|-----------------|
-| [Sprint 07](sprint-07.md) | Conditions system | Condition CRUD, properties, styling, condition manager UI |
-| [Sprint 08](sprint-08.md) | Linear takeoff | Click-to-click drawing, running totals, segments, vertex editing |
-| [Sprint 09](sprint-09.md) | Area & count takeoff | Polygon/rect/circle areas, cutouts, rapid-click counting |
-| [Sprint 10](sprint-10.md) | Formula engine & assemblies | Expression parser, assembly items, derived quantities |
+
+| Sprint                    | Focus                       | Key Deliverable                                                  |
+| ------------------------- | --------------------------- | ---------------------------------------------------------------- |
+| [Sprint 07](sprint-07.md) | Conditions system           | Condition CRUD, properties, styling, condition manager UI        |
+| [Sprint 08](sprint-08.md) | Linear takeoff              | Click-to-click drawing, running totals, segments, vertex editing |
+| [Sprint 09](sprint-09.md) | Area & count takeoff        | Polygon/rect/circle areas, cutouts, rapid-click counting         |
+| [Sprint 10](sprint-10.md) | Formula engine & assemblies | Expression parser, assembly items, derived quantities            |
+
 
 ---
 
@@ -48,10 +54,12 @@ Build the measurement tools and the conditions/assemblies system. At the end of 
 
 Build the quantities panel and export functionality. At the end of this phase, users can review all measurements in a structured tree view with bidirectional plan linking, apply manual overrides, and export to PDF/Excel.
 
-| Sprint | Focus | Key Deliverable |
-|--------|-------|-----------------|
+
+| Sprint                    | Focus            | Key Deliverable                                           |
+| ------------------------- | ---------------- | --------------------------------------------------------- |
 | [Sprint 11](sprint-11.md) | Quantities panel | Grouped tree, subtotals, bidirectional linking, overrides |
-| [Sprint 12](sprint-12.md) | Export | PDF/Excel generation, grouped layout, download flow |
+| [Sprint 12](sprint-12.md) | Export           | PDF/Excel generation, grouped layout, download flow       |
+
 
 ---
 
@@ -59,10 +67,12 @@ Build the quantities panel and export functionality. At the end of this phase, u
 
 Add real-time collaboration and monetization. At the end of this phase, multiple users can work on the same plan simultaneously with live cursors, and the billing system handles subscriptions and seat management.
 
-| Sprint | Focus | Key Deliverable |
-|--------|-------|-----------------|
+
+| Sprint                    | Focus                   | Key Deliverable                                                |
+| ------------------------- | ----------------------- | -------------------------------------------------------------- |
 | [Sprint 13](sprint-13.md) | Real-time collaboration | Liveblocks integration, live cursors, presence, lock-on-select |
-| [Sprint 14](sprint-14.md) | Billing & subscription | DodoPayments, seat management, proration, invoices |
+| [Sprint 14](sprint-14.md) | Billing & subscription  | DodoPayments, seat management, proration, invoices             |
+
 
 ---
 
@@ -70,33 +80,37 @@ Add real-time collaboration and monetization. At the end of this phase, multiple
 
 Polish, optimize, and prepare for production launch. At the end of this phase, Contruo is production-ready.
 
-| Sprint | Focus | Key Deliverable |
-|--------|-------|-----------------|
-| [Sprint 15](sprint-15.md) | Polish & QA | Keyboard shortcuts, snap-to-geometry, freehand, edge cases, bug fixes |
-| [Sprint 16](sprint-16.md) | Performance & deployment | Load testing, optimization, staging, production deploy, launch |
+
+| Sprint                    | Focus                    | Key Deliverable                                                       |
+| ------------------------- | ------------------------ | --------------------------------------------------------------------- |
+| [Sprint 15](sprint-15.md) | Polish & QA              | Keyboard shortcuts, snap-to-geometry, freehand, edge cases, bug fixes |
+| [Sprint 16](sprint-16.md) | Performance & deployment | Load testing, optimization, staging, production deploy, launch        |
+
 
 ---
 
 ## Sprint Status Tracker
 
-| Sprint | Status | Start Date | End Date | Notes |
-|--------|--------|------------|----------|-------|
-| Sprint 01 | Complete | 2026-04-15 | 2026-04-15 | Scaffolding done, ready for Sprint 02 |
-| Sprint 02 | Complete | 2026-04-15 | 2026-04-15 | Auth flow, JWT validation, protected routes, welcome modal |
-| Sprint 03 | Complete | 2026-04-15 | 2026-04-15 | Org settings, team management, invitations, permissions, guest access |
-| Sprint 04 | Complete | 2026-04-16 | 2026-04-16 | Projects, PDF upload + Supabase Storage, Celery PDF processing, sheet extraction & thumbnails, workspace UI |
-| Sprint 05 | Complete | 2026-04-16 | 2026-04-16 | pdf.js viewer, zoom/pan, sheet index, 3-panel layout + persisted splits, document signed URL API |
-| Sprint 06 | Not Started | - | - | |
-| Sprint 07 | Not Started | - | - | |
-| Sprint 08 | Not Started | - | - | |
-| Sprint 09 | Not Started | - | - | |
-| Sprint 10 | Not Started | - | - | |
-| Sprint 11 | Not Started | - | - | |
-| Sprint 12 | Not Started | - | - | |
-| Sprint 13 | Not Started | - | - | |
-| Sprint 14 | Not Started | - | - | |
-| Sprint 15 | Not Started | - | - | |
-| Sprint 16 | Not Started | - | - | |
+
+| Sprint    | Status      | Start Date | End Date   | Notes                                                                                                                                                                                                                                             |
+| --------- | ----------- | ---------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sprint 01 | Complete    | 2026-04-15 | 2026-04-15 | Scaffolding done, ready for Sprint 02                                                                                                                                                                                                             |
+| Sprint 02 | Complete    | 2026-04-15 | 2026-04-15 | Auth flow, JWT validation, protected routes, welcome modal                                                                                                                                                                                        |
+| Sprint 03 | Complete    | 2026-04-15 | 2026-04-15 | Org settings, team management, invitations, permissions, guest access                                                                                                                                                                             |
+| Sprint 04 | Complete    | 2026-04-16 | 2026-04-16 | Projects, PDF upload + Supabase Storage, Celery PDF processing, sheet extraction & thumbnails, workspace UI                                                                                                                                       |
+| Sprint 05 | Complete    | 2026-04-16 | 2026-04-16 | pdf.js viewer, zoom/pan, sheet index, 3-panel layout + persisted splits, document signed URL API                                                                                                                                                  |
+| Sprint 06 | Complete    | 2026-04-16 | 2026-04-18 | Scale calibration (manual + auto), text search across sheets, takeoff toolbar                                                                                                                                                                     |
+| Sprint 07 | Complete    | 2026-04-18 | 2026-04-18 | Conditions CRUD + RLS, manager panel, toolbar/status bar, measurements FK + cascade delete                                                                                                                                                        |
+| Sprint 08 | Partial     | 2026-04-18 | 2026-04-18 | Linear takeoff core: measurements API, click-to-click draw, styled overlays, persistence, selection/delete, condition aggregates; vertex editing & on-canvas labels deferred — see [Deferred & follow-on features](#deferred--follow-on-features) |
+| Sprint 09 | Partial     | 2026-04-18 | -          | Area poly/rect/ellipse, holes (H), aggregates, count rapid-click + drag PATCH + Ctrl multi-delete; area vertex edit & boolean subtract UI deferred — see [sprint-09.md](sprint-09.md) |
+| Sprint 10 | Partial     | 2026-04-18 | -          | Formula engine (AST), assembly CRUD + RLS, derived quantities on measurements, org templates + import, condition reassignment UI; drag-reorder, formula syntax highlight, autocomplete deferred — see [sprint-10.md](sprint-10.md)              |
+| Sprint 11 | Not Started | -          | -          |                                                                                                                                                                                                                                                   |
+| Sprint 12 | Not Started | -          | -          |                                                                                                                                                                                                                                                   |
+| Sprint 13 | Not Started | -          | -          |                                                                                                                                                                                                                                                   |
+| Sprint 14 | Not Started | -          | -          |                                                                                                                                                                                                                                                   |
+| Sprint 15 | Not Started | -          | -          |                                                                                                                                                                                                                                                   |
+| Sprint 16 | Not Started | -          | -          |                                                                                                                                                                                                                                                   |
+
 
 ---
 
@@ -125,24 +139,64 @@ graph TD
     S15 --> S16[Sprint 16: Deploy & Launch]
 ```
 
+
+
 ---
 
 ## Feature-to-Sprint Mapping
 
-| Feature File | Sprint(s) |
-|-------------|-----------|
-| `features/platform/auth-and-onboarding.md` | Sprint 02, 03 |
-| `features/platform/organization-management.md` | Sprint 03 |
-| `features/collaboration/roles-and-permissions.md` | Sprint 03 |
-| `features/core/plan-viewer.md` | Sprint 04, 05, 06 |
-| `features/core/conditions-and-assemblies.md` | Sprint 07, 10 |
-| `features/core/linear-takeoff.md` | Sprint 08, 15 |
-| `features/core/area-takeoff.md` | Sprint 09, 15 |
-| `features/core/count-takeoff.md` | Sprint 09 |
-| `features/core/quantity-management.md` | Sprint 11 |
-| `features/export-reporting/export-formats.md` | Sprint 12 |
-| `features/collaboration/real-time-editing.md` | Sprint 13 |
-| `features/platform/subscription-and-billing.md` | Sprint 14 |
-| `features/collaboration/comments-and-markup.md` | Post-MVP (groundwork in Sprint 13) |
-| `features/collaboration/activity-log.md` | Post-MVP (groundwork in Sprint 01) |
-| `features/core/volume-takeoff.md` | Post-MVP |
+
+| Feature File                                      | Sprint(s)                          |
+| ------------------------------------------------- | ---------------------------------- |
+| `features/platform/auth-and-onboarding.md`        | Sprint 02, 03                      |
+| `features/platform/organization-management.md`    | Sprint 03                          |
+| `features/collaboration/roles-and-permissions.md` | Sprint 03                          |
+| `features/core/plan-viewer.md`                    | Sprint 04, 05, 06                  |
+| `features/core/conditions-and-assemblies.md`      | Sprint 07, 10                      |
+| `features/core/linear-takeoff.md`                 | Sprint 08, 15                      |
+| `features/core/area-takeoff.md`                   | Sprint 09, 15                      |
+| `features/core/count-takeoff.md`                  | Sprint 09                          |
+| `features/core/quantity-management.md`            | Sprint 11                          |
+| `features/export-reporting/export-formats.md`     | Sprint 12                          |
+| `features/collaboration/real-time-editing.md`     | Sprint 13                          |
+| `features/platform/subscription-and-billing.md`   | Sprint 14                          |
+| `features/collaboration/comments-and-markup.md`   | Post-MVP (groundwork in Sprint 13) |
+| `features/collaboration/activity-log.md`          | Post-MVP (groundwork in Sprint 01) |
+| `features/core/volume-takeoff.md`                 | Post-MVP                           |
+
+
+---
+
+## Deferred & follow-on features
+
+These items are **out of scope for the first vertical slice** of a sprint but are still part of the product vision. They are listed here so you can **pull them into a future sprint** without losing track of them. Suggested allocations reference this roadmap’s numbered sprints; you can also spin a **short follow-on** (e.g. “Sprint 08b”) between two planned sprints if needed.
+
+### Linear takeoff — Phase 2 (extends [Sprint 08](sprint-08.md))
+
+
+| Bucket              | Feature                                                                  | Suggested sprint                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| **Display (draft)** | Per-segment length labels on the plan while drawing                      | [Sprint 15](sprint-15.md) (polish & QA) or dedicated linear polish                                                |
+| **Display (draft)** | Distance from last vertex to cursor (before next click)                  | [Sprint 15](sprint-15.md) or same polish pass as above                                                            |
+| **Rendering**       | Inline measurement labels on completed runs (e.g. `47.5 LF`), zoom-aware | [Sprint 15](sprint-15.md) or linear Phase 2                                                                       |
+| **Vertex editing**  | Handles, drag to move, midpoint to add vertex, Delete to remove vertex   | **Follow-on** before or inside [Sprint 15](sprint-15.md) — larger than a single bugfix; pairs with PATCH batching |
+| **Persistence**     | Save edited geometry on commit / deselect (not every pointer frame)      | Same sprint as vertex editing                                                                                     |
+| **History**         | Full undo/redo (including redo) for create, edit, delete                 | [Sprint 15](sprint-15.md) (keyboard & QA) or shared “measurement history” pass with area/count later              |
+
+
+**Allocation tips**
+
+- **Bundle A (annotation UX):** per-segment lengths + cursor distance + inline labels → one **polish** sprint, often **Sprint 15** alongside other shortcut/edge-case work.
+- **Bundle B (editing):** vertex handles + PATCH-on-complete + live recalculation → treat as a **mini-milestone** (e.g. Sprint 08b or first week of Sprint 15) because it touches canvas, API, and conflict with pan/select.
+- **Bundle C (history):** generalize undo/redo once linear + area tools share patterns — **Sprint 15** or **post–MVP** if time is tight.
+
+### Backlog — other themes (placeholders)
+
+
+| Theme            | Examples                                                 | When to pull in                                                           |
+| ---------------- | -------------------------------------------------------- | ------------------------------------------------------------------------- |
+| **Area & count** | Deferred items from [Sprint 09](sprint-09.md) when filed | After linear core is stable in production use                             |
+| **Cross-tool**   | Shared snap, ortho mode, measurement templates           | [Sprint 15](sprint-15.md) or dedicated UX sprint                          |
+| **Post-MVP**     | Volume takeoff, rich activity log, comments              | See [Feature-to-Sprint Mapping](#feature-to-sprint-mapping) Post-MVP rows |
+
+

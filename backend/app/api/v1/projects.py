@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db
 from app.middleware.auth import AuthContext
 from app.services.permission_service import Permission, require_permission
-from app.services import project_service, plan_service, sheet_service
+from app.services import project_service, plan_service, sheet_service, template_service
 from app.schemas.project import (
     CreateProjectRequest,
     UpdateProjectRequest,
@@ -21,6 +21,8 @@ from app.schemas.plan import (
     ProjectSearchResponse,
     SearchHit,
 )
+from app.schemas.assembly import ImportConditionTemplateRequest
+from app.schemas.condition import ConditionResponse
 
 router = APIRouter(prefix="/projects")
 
@@ -240,3 +242,19 @@ async def list_project_sheets(
             for s in sheets
         ]
     }
+
+
+@router.post(
+    "/{project_id}/conditions/import-from-template",
+    response_model=ConditionResponse,
+    status_code=201,
+)
+async def import_condition_from_template(
+    project_id: uuid.UUID,
+    body: ImportConditionTemplateRequest,
+    auth: AuthContext = Depends(require_permission(Permission.IMPORT_TEMPLATES)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await template_service.import_template_to_project(
+        db, auth.org_id, project_id, auth.user_id, body.template_id
+    )

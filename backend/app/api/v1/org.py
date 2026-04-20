@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, UploadFile, File
+from fastapi import APIRouter, Depends, Response, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db
@@ -20,6 +20,12 @@ from app.schemas.org import (
     GuestInviteRequest,
 )
 from app.schemas.auth import AuthResponse
+from app.schemas.assembly import (
+    ConditionTemplateListResponse,
+    ConditionTemplateResponse,
+    SaveConditionAsTemplateRequest,
+)
+from app.services import template_service
 
 router = APIRouter(prefix="/org")
 
@@ -185,6 +191,42 @@ async def accept_invitation(
     db: AsyncSession = Depends(get_db),
 ):
     return await org_service.accept_invitation(db, token, body.full_name, body.password)
+
+
+# ── Condition templates (org library) ─────────────────────────────────
+
+@router.get("/condition-templates", response_model=ConditionTemplateListResponse)
+async def list_condition_templates(
+    auth: AuthContext = Depends(require_permission(Permission.VIEW_PLANS)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await template_service.list_templates(db, auth.org_id)
+
+
+@router.post(
+    "/conditions/{condition_id}/save-as-template",
+    response_model=ConditionTemplateResponse,
+    status_code=201,
+)
+async def save_condition_as_template(
+    condition_id: uuid.UUID,
+    body: SaveConditionAsTemplateRequest,
+    auth: AuthContext = Depends(require_permission(Permission.MANAGE_CONDITIONS)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await template_service.save_condition_as_template(
+        db, auth.org_id, condition_id, auth.user_id, body
+    )
+
+
+@router.delete("/condition-templates/{template_id}", status_code=204)
+async def delete_condition_template(
+    template_id: uuid.UUID,
+    auth: AuthContext = Depends(require_permission(Permission.MANAGE_CONDITIONS)),
+    db: AsyncSession = Depends(get_db),
+):
+    await template_service.delete_template(db, auth.org_id, template_id, auth.user_id)
+    return Response(status_code=204)
 
 
 # ── Guest Access ─────────────────────────────────────────────────────

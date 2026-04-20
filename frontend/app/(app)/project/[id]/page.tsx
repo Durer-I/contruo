@@ -27,6 +27,7 @@ export default function ProjectPage() {
   const role = (user?.role ?? "viewer") as Role;
   const canUpload = hasPermission(role, "upload_plans");
   const canEditMeasurements = hasPermission(role, "edit_measurements");
+  const canManageConditions = hasPermission(role, "manage_conditions");
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [plans, setPlans] = useState<PlanInfo[]>([]);
   const [sheets, setSheets] = useState<SheetInfo[]>([]);
@@ -202,6 +203,7 @@ export default function ProjectPage() {
           onSheetsRefresh={refreshSheetsSilently}
           sheetsRefreshing={sheetsRefreshing}
           canEditMeasurements={canEditMeasurements}
+          canManageConditions={canManageConditions}
         />
       ) : (
         <div className="flex flex-1 flex-col overflow-auto p-6">

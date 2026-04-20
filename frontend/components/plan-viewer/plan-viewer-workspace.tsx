@@ -26,18 +26,42 @@ import type {
   SheetInfo,
 } from "@/types/project";
 import { useTakeoffToolbarSlot } from "@/providers/takeoff-toolbar-slot-provider";
+import { useStatusBarSlot } from "@/providers/status-bar-slot-provider";
+import { useConditions } from "@/hooks/use-conditions";
+import { ConditionManagerPanel } from "@/components/conditions/condition-manager-panel";
 
 import {
   PlanPdfCanvas,
   type PlanPdfCanvasHandle,
   type PdfPoint,
+  type AreaOverlaySaved,
 } from "@/components/plan-viewer/plan-pdf-canvas";
 import { viewportStorageKey } from "@/components/plan-viewer/sheet-viewport-storage";
 import { TakeoffToolbar, type TakeoffTool } from "@/components/plan-viewer/takeoff-toolbar";
 import { ScaleCalibrationDialog } from "@/components/plan-viewer/scale-calibration-dialog";
 import { ScaleIntroDialog } from "@/components/plan-viewer/scale-intro-dialog";
 import { PlanSearchPanel } from "@/components/plan-viewer/plan-search-panel";
-
+import type { LineStyleDash } from "@/components/plan-viewer/plan-pdf-canvas";
+import type {
+  AreaGeometry,
+  CountGeometry,
+  LinearGeometry,
+  MeasurementAggregatesResponse,
+  MeasurementInfo,
+} from "@/types/measurement";
+import {
+  distancePointToPolyline,
+  formatLength,
+  polylineLengthPdf,
+  realLengthFromPdf,
+} from "@/lib/linear-geometry";
+import {
+  distancePointToPolygonEdge,
+  formatAreaQuantity,
+  pointInPolygon,
+  polygonAreaAbs,
+  realAreaFromPdfSq,
+} from "@/lib/area-geometry";
 interface PlanViewerWorkspaceProps {
   projectId: string;
   projectName: string;
@@ -50,6 +74,7 @@ interface PlanViewerWorkspaceProps {
   /** Parent silent refetch in progress (e.g. after saving scale). */
   sheetsRefreshing?: boolean;
   canEditMeasurements: boolean;
+  canManageConditions: boolean;
 }
 
 const PANEL_IDS = ["sheet-index", "viewer", "quantities"] as const;
@@ -66,10 +91,21 @@ export function PlanViewerWorkspace({
   onSheetsRefresh,
   sheetsRefreshing = false,
   canEditMeasurements,
+  canManageConditions,
 }: PlanViewerWorkspaceProps) {
   const canvasRef = useRef<PlanPdfCanvasHandle>(null);
   const skipSheetResetOnPlanChangeRef = useRef(false);
   const { setTakeoffSlot } = useTakeoffToolbarSlot();
+  const { setStatusBarSlot } = useStatusBarSlot();
+  const {
+    conditions,
+    loading: conditionsLoading,
+    error: conditionsError,
+    load: loadConditions,
+  } = useConditions(projectId);
+  const [activeConditionId, setActiveConditionId] = useState<string | null>(null);
+  /** After first non-empty load, keep null when user clears selection (don't force-select first on refetch). */
+  const conditionSelectionInitializedRef = useRef(false);
   const [userSheetId, setUserSheetId] = useState<string | null>(null);
   const [docBundle, setDocBundle] = useState<{ planId: string; url: string } | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
@@ -101,6 +137,131 @@ export function PlanViewerWorkspace({
     [sheets, activePlanId]
   );
 
+  const activeSheetId = useMemo(() => {
+    if (planSheets.length === 0) return null;
+    if (userSheetId && planSheets.some((s) => s.id === userSheetId)) return userSheetId;
+    return planSheets[0]!.id;
+  }, [planSheets, userSheetId]);
+
+  const activeSheet = useMemo(
+    () => planSheets.find((s) => s.id === activeSheetId) ?? null,
+    [planSheets, activeSheetId]
+  );
+
+  useEffect(() => {
+    void loadConditions();
+  }, [loadConditions]);
+
+  useEffect(() => {
+    if (conditions.length === 0) {
+      setActiveConditionId(null);
+      conditionSelectionInitializedRef.current = false;
+      return;
+    }
+    setActiveConditionId((prev) => {
+      if (prev && conditions.some((c) => c.id === prev)) return prev;
+      if (prev && !conditions.some((c) => c.id === prev)) {
+        conditionSelectionInitializedRef.current = true;
+        return conditions[0]!.id;
+      }
+      if (prev === null) {
+        if (!conditionSelectionInitializedRef.current) {
+          conditionSelectionInitializedRef.current = true;
+          return conditions[0]!.id;
+        }
+        return null;
+      }
+      return prev;
+    });
+  }, [conditions]);
+
+  const activeCondition = useMemo(
+    () => conditions.find((c) => c.id === activeConditionId) ?? null,
+    [conditions, activeConditionId]
+  );
+
+  const [sheetMeasurements, setSheetMeasurements] = useState<MeasurementInfo[]>([]);
+  const [linearDraft, setLinearDraft] = useState<PdfPoint[]>([]);
+  const [linearHoverPdf, setLinearHoverPdf] = useState<PdfPoint | null>(null);
+  const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
+  const [measurementUndoStack, setMeasurementUndoStack] = useState<string[]>([]);
+  const [measurementAggregates, setMeasurementAggregates] =
+    useState<MeasurementAggregatesResponse | null>(null);
+
+  const [areaRing, setAreaRing] = useState<PdfPoint[]>([]);
+  const [areaHoverPdf, setAreaHoverPdf] = useState<PdfPoint | null>(null);
+  const [selectedCountIds, setSelectedCountIds] = useState<Set<string>>(() => new Set());
+  const [countDragPreview, setCountDragPreview] = useState<{
+    id: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const countDragPreviewRef = useRef<{ id: string; x: number; y: number } | null>(null);
+  const [countPendingDots, setCountPendingDots] = useState<
+    { tempId: string; x: number; y: number }[]
+  >([]);
+
+  const loadSheetMeasurements = useCallback(async () => {
+    if (!activeSheetId) {
+      setSheetMeasurements([]);
+      setMeasurementAggregates(null);
+      return;
+    }
+    try {
+      const r = await api.get<{
+        measurements: MeasurementInfo[];
+        aggregates?: MeasurementAggregatesResponse | null;
+      }>(
+        `/api/v1/projects/${projectId}/measurements?sheet_id=${activeSheetId}&include_aggregates=true`
+      );
+      setSheetMeasurements(r.measurements);
+      setMeasurementAggregates(r.aggregates ?? null);
+    } catch {
+      setSheetMeasurements([]);
+      setMeasurementAggregates(null);
+    }
+  }, [projectId, activeSheetId]);
+
+  /** After condition CRUD (especially delete), CASCADE removes measurements — refetch both lists. */
+  const refreshConditionsAndSheetMeasurements = useCallback(async () => {
+    await loadConditions();
+    await loadSheetMeasurements();
+  }, [loadConditions, loadSheetMeasurements]);
+
+  useEffect(() => {
+    void loadSheetMeasurements();
+  }, [loadSheetMeasurements]);
+
+  useEffect(() => {
+    const ids = new Set(sheetMeasurements.map((m) => m.id));
+    setSelectedMeasurementId((prev) => (prev && ids.has(prev) ? prev : null));
+    setMeasurementUndoStack((s) => s.filter((id) => ids.has(id)));
+  }, [sheetMeasurements]);
+
+  useEffect(() => {
+    setLinearDraft([]);
+    setLinearHoverPdf(null);
+    setAreaRing([]);
+    setAreaHoverPdf(null);
+    setSelectedCountIds(new Set());
+    setCountDragPreview(null);
+    countDragPreviewRef.current = null;
+    setCountPendingDots([]);
+  }, [activeSheetId, activeTool]);
+
+  useEffect(() => {
+    setCountPendingDots([]);
+  }, [activeConditionId]);
+
+  useEffect(() => {
+    setSelectedMeasurementId(null);
+    setMeasurementUndoStack([]);
+  }, [activeSheetId]);
+
+  useEffect(() => {
+    if (activeTool !== "linear") setLinearHoverPdf(null);
+  }, [activeTool]);
+
   useEffect(() => {
     if (skipSheetResetOnPlanChangeRef.current) {
       skipSheetResetOnPlanChangeRef.current = false;
@@ -108,17 +269,6 @@ export function PlanViewerWorkspace({
     }
     setUserSheetId(null);
   }, [activePlanId]);
-
-  const activeSheetId = useMemo(() => {
-    if (planSheets.length === 0) return null;
-    if (userSheetId && planSheets.some((s) => s.id === userSheetId)) return userSheetId;
-    return planSheets[0].id;
-  }, [planSheets, userSheetId]);
-
-  const activeSheet = useMemo(
-    () => planSheets.find((s) => s.id === activeSheetId) ?? null,
-    [planSheets, activeSheetId]
-  );
 
   const planId = activeSheet?.plan_id ?? null;
 
@@ -196,8 +346,577 @@ export function PlanViewerWorkspace({
     activeSheet &&
     activeSheet.scale_value == null;
 
+  const linearDraftRef = useRef<PdfPoint[]>([]);
+  linearDraftRef.current = linearDraft;
+  const areaRingRef = useRef<PdfPoint[]>([]);
+  areaRingRef.current = areaRing;
+
+  function conditionDash(ls: string): LineStyleDash {
+    if (ls === "dashed") return "dashed";
+    if (ls === "dotted") return "dotted";
+    return "solid";
+  }
+
+  const linearTakeoffEnabled =
+    canEditMeasurements &&
+    activeTool === "linear" &&
+    activeSheet?.scale_value != null &&
+    activeCondition?.measurement_type === "linear" &&
+    Boolean(activeConditionId);
+
+  const finishLinearMeasurement = useCallback(
+    async (verts: PdfPoint[]) => {
+      if (verts.length < 2 || !activeSheetId || !activeConditionId) {
+        setLinearDraft([]);
+        setLinearHoverPdf(null);
+        return;
+      }
+      try {
+        const created = await api.post<MeasurementInfo>(
+          `/api/v1/projects/${projectId}/measurements`,
+          {
+            sheet_id: activeSheetId,
+            condition_id: activeConditionId,
+            measurement_type: "linear",
+            geometry: { type: "linear", vertices: verts },
+          }
+        );
+        setMeasurementUndoStack((s) => [...s, created.id]);
+        setLinearDraft([]);
+        setLinearHoverPdf(null);
+        setSheetMeasurements((prev) => [...prev, created]);
+        setActiveTool("select");
+        void loadSheetMeasurements();
+        void loadConditions();
+      } catch {
+        //
+      }
+    },
+    [activeSheetId, activeConditionId, projectId, loadSheetMeasurements, loadConditions]
+  );
+
+  const areaTakeoffEnabled =
+    canEditMeasurements &&
+    activeTool === "area" &&
+    activeSheet?.scale_value != null &&
+    activeCondition?.measurement_type === "area" &&
+    Boolean(activeConditionId);
+
+  const countTakeoffEnabled =
+    canEditMeasurements &&
+    activeTool === "count" &&
+    activeSheet?.scale_value != null &&
+    activeCondition?.measurement_type === "count" &&
+    Boolean(activeConditionId);
+
+  const submitAreaPolygonStep = useCallback(() => {
+    if (areaRing.length < 3) return;
+    const outer = [...areaRing];
+    void (async () => {
+      if (!activeSheetId || !activeConditionId) return;
+      try {
+        const created = await api.post<MeasurementInfo>(`/api/v1/projects/${projectId}/measurements`, {
+          sheet_id: activeSheetId,
+          condition_id: activeConditionId,
+          measurement_type: "area",
+          geometry: {
+            type: "area",
+            shape: "polygon",
+            outer,
+            holes: [],
+          },
+        });
+        setMeasurementUndoStack((s) => [...s, created.id]);
+        setAreaRing([]);
+        setAreaHoverPdf(null);
+        setSheetMeasurements((prev) => [...prev, created]);
+        setActiveTool("select");
+        void loadSheetMeasurements();
+        void loadConditions();
+      } catch {
+        //
+      }
+    })();
+  }, [areaRing, activeSheetId, activeConditionId, projectId, loadSheetMeasurements, loadConditions]);
+
+  const placeCountMarker = useCallback(
+    async (pt: PdfPoint) => {
+      if (!activeSheetId || !activeConditionId) return;
+      const tempId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? `pending:${crypto.randomUUID()}`
+          : `pending:${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      setCountPendingDots((p) => [...p, { tempId, x: pt.x, y: pt.y }]);
+      try {
+        const created = await api.post<MeasurementInfo>(
+          `/api/v1/projects/${projectId}/measurements`,
+          {
+            sheet_id: activeSheetId,
+            condition_id: activeConditionId,
+            measurement_type: "count",
+            geometry: { type: "count", position: { x: pt.x, y: pt.y } },
+          }
+        );
+        setCountPendingDots((p) => p.filter((d) => d.tempId !== tempId));
+        setMeasurementUndoStack((s) => [...s, created.id]);
+        setSheetMeasurements((prev) => [...prev, created]);
+        void loadSheetMeasurements();
+        void loadConditions();
+      } catch {
+        setCountPendingDots((p) => p.filter((d) => d.tempId !== tempId));
+      }
+    },
+    [activeSheetId, activeConditionId, projectId, loadSheetMeasurements, loadConditions]
+  );
+
+  const handleSelectPdfPoint = useCallback(
+    (
+      pt: PdfPoint,
+      modifiers: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }
+    ) => {
+      const tol = 10;
+      let best: { id: string; d: number } | null = null;
+
+      for (const m of sheetMeasurements) {
+        if (m.measurement_type !== "count" || m.geometry.type !== "count") continue;
+        const pos = m.geometry.position;
+        const d = Math.hypot(pt.x - pos.x, pt.y - pos.y);
+        if (d <= tol * 1.5 && (!best || d < best.d)) best = { id: m.id, d };
+      }
+      if (best) {
+        if (modifiers.ctrlKey || modifiers.metaKey) {
+          setSelectedCountIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(best!.id)) next.delete(best!.id);
+            else next.add(best!.id);
+            const primary =
+              next.size === 0
+                ? null
+                : next.has(best!.id)
+                  ? best!.id
+                  : [...next][0] ?? null;
+            queueMicrotask(() => setSelectedMeasurementId(primary));
+            return next;
+          });
+          return;
+        }
+        setSelectedMeasurementId(best.id);
+        setSelectedCountIds(new Set([best.id]));
+        return;
+      }
+
+      best = null;
+      for (const m of sheetMeasurements) {
+        if (m.measurement_type !== "area" || m.geometry.type !== "area") continue;
+        const outer = m.geometry.outer.map((v) => ({ x: v.x, y: v.y }));
+        if (outer.length < 3) continue;
+        if (pointInPolygon(pt.x, pt.y, outer)) {
+          setSelectedMeasurementId(m.id);
+          setSelectedCountIds(new Set());
+          return;
+        }
+        const d = distancePointToPolygonEdge(pt.x, pt.y, outer, true);
+        if (d <= tol && (!best || d < best.d)) best = { id: m.id, d };
+      }
+      if (best) {
+        setSelectedMeasurementId(best.id);
+        setSelectedCountIds(new Set());
+        return;
+      }
+
+      best = null;
+      for (const m of sheetMeasurements) {
+        if (m.measurement_type !== "linear" || m.geometry.type !== "linear") continue;
+        const verts = m.geometry.vertices;
+        const d = distancePointToPolyline(pt.x, pt.y, verts);
+        if (d <= tol && (!best || d < best.d)) best = { id: m.id, d };
+      }
+      setSelectedMeasurementId(best ? best.id : null);
+      setSelectedCountIds(new Set());
+    },
+    [sheetMeasurements]
+  );
+
+  const onCountMarkerPointerDown = useCallback(
+    (measurementId: string, e: React.PointerEvent<SVGCircleElement>) => {
+      if (!canEditMeasurements || activeTool !== "select") return;
+      e.preventDefault();
+      e.stopPropagation();
+      const m = sheetMeasurements.find((x) => x.id === measurementId);
+      if (!m || m.measurement_type !== "count" || m.geometry.type !== "count") return;
+      const pos = m.geometry.position;
+      const pt0 = canvasRef.current?.clientToPdfPoint(e.clientX, e.clientY);
+      if (!pt0) return;
+      const offset = { x: pos.x - pt0.x, y: pos.y - pt0.y };
+      const el = e.currentTarget;
+      el.setPointerCapture(e.pointerId);
+
+      const onMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== e.pointerId) return;
+        const pdf = canvasRef.current?.clientToPdfPoint(ev.clientX, ev.clientY);
+        if (!pdf) return;
+        const next = { id: measurementId, x: pdf.x + offset.x, y: pdf.y + offset.y };
+        countDragPreviewRef.current = next;
+        setCountDragPreview(next);
+      };
+      const onUp = async (ev: PointerEvent) => {
+        if (ev.pointerId !== e.pointerId) return;
+        el.removeEventListener("pointermove", onMove);
+        el.removeEventListener("pointerup", onUp);
+        el.removeEventListener("pointercancel", onUp);
+        try {
+          el.releasePointerCapture(e.pointerId);
+        } catch {
+          //
+        }
+        const final = countDragPreviewRef.current;
+        countDragPreviewRef.current = null;
+        setCountDragPreview(null);
+        if (!final || final.id !== measurementId) return;
+        const dist = Math.hypot(final.x - pos.x, final.y - pos.y);
+        if (dist < 0.5) return;
+        try {
+          await api.patch(`/api/v1/measurements/${measurementId}`, {
+            geometry: { type: "count", position: { x: final.x, y: final.y } },
+          });
+          setSheetMeasurements((prev) =>
+            prev.map((m) =>
+              m.id === measurementId
+                ? {
+                    ...m,
+                    geometry: { type: "count" as const, position: { x: final.x, y: final.y } },
+                  }
+                : m
+            )
+          );
+          void loadSheetMeasurements();
+          void loadConditions();
+        } catch {
+          //
+        }
+      };
+      countDragPreviewRef.current = { id: measurementId, x: pos.x, y: pos.y };
+      setCountDragPreview({ id: measurementId, x: pos.x, y: pos.y });
+      el.addEventListener("pointermove", onMove);
+      el.addEventListener("pointerup", onUp);
+      el.addEventListener("pointercancel", onUp);
+    },
+    [canEditMeasurements, activeTool, sheetMeasurements, loadSheetMeasurements, loadConditions]
+  );
+
+  const linearTakeoff = useMemo(() => {
+    if (!linearTakeoffEnabled) return null;
+    return {
+      active: true,
+      onPdfPoint: (pt: PdfPoint) => {
+        setLinearDraft((d) => {
+          if (d.length > 0) {
+            const last = d[d.length - 1]!;
+            if (Math.hypot(pt.x - last.x, pt.y - last.y) < 0.25) return d;
+          }
+          return [...d, pt];
+        });
+      },
+      onHoverPdf: setLinearHoverPdf,
+      onComplete: () => void finishLinearMeasurement(linearDraftRef.current),
+    };
+  }, [linearTakeoffEnabled, finishLinearMeasurement]);
+
+  const areaPolygonTakeoff = useMemo(() => {
+    if (
+      !canEditMeasurements ||
+      activeTool !== "area" ||
+      activeSheet?.scale_value == null ||
+      activeCondition?.measurement_type !== "area" ||
+      !activeConditionId
+    ) {
+      return null;
+    }
+    return {
+      active: true,
+      onPdfPoint: (pt: PdfPoint) => {
+        setAreaRing((d) => {
+          if (d.length > 0) {
+            const last = d[d.length - 1]!;
+            if (Math.hypot(pt.x - last.x, pt.y - last.y) < 0.25) return d;
+          }
+          return [...d, pt];
+        });
+      },
+      onHoverPdf: setAreaHoverPdf,
+      onComplete: () => void submitAreaPolygonStep(),
+    };
+  }, [
+    canEditMeasurements,
+    activeTool,
+    activeSheet?.scale_value,
+    activeCondition,
+    activeConditionId,
+    submitAreaPolygonStep,
+  ]);
+
+  const countTakeoff = useMemo(() => {
+    if (!countTakeoffEnabled) return null;
+    return {
+      active: true,
+      onPdfClick: (pt: PdfPoint) => void placeCountMarker(pt),
+    };
+  }, [countTakeoffEnabled, placeCountMarker]);
+
+  const selectToolProbe =
+    canEditMeasurements && activeTool === "select"
+      ? { active: true, onPdfClick: handleSelectPdfPoint }
+      : null;
+
+  const selectedMeasurement = useMemo(
+    () => sheetMeasurements.find((m) => m.id === selectedMeasurementId) ?? null,
+    [sheetMeasurements, selectedMeasurementId]
+  );
+
+  const compatibleConditionsForReassign = useMemo(() => {
+    if (!selectedMeasurement) return [];
+    return conditions.filter((c) => c.measurement_type === selectedMeasurement.measurement_type);
+  }, [conditions, selectedMeasurement]);
+
+  const onReassignMeasurementCondition = useCallback(
+    async (newConditionId: string) => {
+      if (!selectedMeasurementId || !newConditionId) return;
+      try {
+        await api.patch(`/api/v1/measurements/${selectedMeasurementId}`, {
+          condition_id: newConditionId,
+        });
+        await loadSheetMeasurements();
+        void loadConditions();
+      } catch {
+        //
+      }
+    },
+    [selectedMeasurementId, loadSheetMeasurements, loadConditions]
+  );
+
+  const linearOverlay = useMemo(() => {
+    const polylines = sheetMeasurements
+      .filter(
+        (m): m is MeasurementInfo & { geometry: LinearGeometry } =>
+          m.measurement_type === "linear" && m.geometry.type === "linear"
+      )
+      .map((m) => {
+        const c = conditions.find((x) => x.id === m.condition_id);
+        const verts = m.geometry.vertices.map((v) => ({ x: v.x, y: v.y }));
+        return {
+          id: m.id,
+          vertices: verts,
+          color: c?.color ?? "#888",
+          lineWidth: c?.line_width ?? 2,
+          dash: conditionDash(c?.line_style ?? "solid"),
+          emphasize: m.id === selectedMeasurementId,
+        };
+      })
+      .filter((p) => p.vertices.length >= 2);
+
+    const draft =
+      linearTakeoffEnabled && linearDraft.length > 0 && activeCondition
+        ? {
+            vertices: linearDraft,
+            preview: linearHoverPdf,
+            color: activeCondition.color,
+            lineWidth: activeCondition.line_width,
+            dash: conditionDash(activeCondition.line_style),
+          }
+        : null;
+
+    return { polylines, draft, vertexHandles: null };
+  }, [
+    sheetMeasurements,
+    conditions,
+    linearDraft,
+    linearHoverPdf,
+    activeCondition,
+    linearTakeoffEnabled,
+    selectedMeasurementId,
+  ]);
+
+  const areaOverlay = useMemo(() => {
+    const areas: AreaOverlaySaved[] = sheetMeasurements
+      .filter(
+        (m): m is MeasurementInfo & { geometry: AreaGeometry } =>
+          m.measurement_type === "area" && m.geometry.type === "area"
+      )
+      .map((m) => {
+        const c = conditions.find((x) => x.id === m.condition_id);
+        const g = m.geometry;
+        return {
+          id: m.id,
+          outer: g.outer.map((v) => ({ x: v.x, y: v.y })),
+          holes: (g.holes ?? []).map((ring) => ring.map((v) => ({ x: v.x, y: v.y }))),
+          color: c?.color ?? "#888",
+          fillOpacity: c?.fill_opacity ?? 0.3,
+          lineWidth: c?.line_width ?? 2,
+          fillPattern:
+            c?.fill_pattern === "crosshatch"
+              ? ("crosshatch" as const)
+              : c?.fill_pattern === "hatch"
+                ? ("hatch" as const)
+                : ("solid" as const),
+          label:
+            c != null
+              ? formatAreaQuantity(m.measured_value, c.unit)
+              : undefined,
+          emphasize: m.id === selectedMeasurementId,
+        };
+      });
+
+    const polygonDraft =
+      areaTakeoffEnabled && activeCondition && areaRing.length > 0
+        ? {
+            vertices: areaRing,
+            preview: areaHoverPdf,
+            color: activeCondition.color,
+            fillOpacity: activeCondition.fill_opacity,
+            lineWidth: activeCondition.line_width,
+          }
+        : null;
+
+    if (areas.length === 0 && !polygonDraft) return null;
+    return { areas, polygonDraft };
+  }, [
+    sheetMeasurements,
+    conditions,
+    selectedMeasurementId,
+    areaTakeoffEnabled,
+    activeCondition,
+    areaRing,
+    areaHoverPdf,
+  ]);
+
+  const countOverlay = useMemo(() => {
+    const saved = sheetMeasurements
+      .filter(
+        (m): m is MeasurementInfo & { geometry: CountGeometry } =>
+          m.measurement_type === "count" && m.geometry.type === "count"
+      )
+      .map((m) => {
+        const c = conditions.find((x) => x.id === m.condition_id);
+        const p = m.geometry.position;
+        const px = countDragPreview?.id === m.id ? countDragPreview.x : p.x;
+        const py = countDragPreview?.id === m.id ? countDragPreview.y : p.y;
+        return {
+          id: m.id,
+          x: px,
+          y: py,
+          color: c?.color ?? "#f43f5e",
+          emphasize: selectedCountIds.has(m.id),
+          onPointerDown:
+            canEditMeasurements && activeTool === "select"
+              ? (ev: React.PointerEvent<SVGCircleElement>) =>
+                  onCountMarkerPointerDown(m.id, ev)
+              : undefined,
+        };
+      });
+    const pending = countPendingDots.map((d) => ({
+      id: d.tempId,
+      x: d.x,
+      y: d.y,
+      color: activeCondition?.color ?? "#f43f5e",
+      emphasize: false,
+      pending: true as const,
+    }));
+    return [...saved, ...pending];
+  }, [
+    sheetMeasurements,
+    conditions,
+    selectedCountIds,
+    countDragPreview,
+    countPendingDots,
+    activeCondition,
+    canEditMeasurements,
+    activeTool,
+    onCountMarkerPointerDown,
+  ]);
+
+  const linearRunningDisplay = useMemo(() => {
+    if (!activeSheet || activeSheet.scale_value == null || !activeCondition) return null;
+    if (linearDraft.length < 2) return null;
+    const pdfLen = polylineLengthPdf(linearDraft);
+    const r = realLengthFromPdf(pdfLen, activeSheet.scale_value, activeSheet.scale_unit);
+    if (r == null) return null;
+    return formatLength(r, activeSheet.scale_unit, activeCondition.unit);
+  }, [linearDraft, activeSheet, activeCondition]);
+
+  const areaDraftRunningDisplay = useMemo(() => {
+    if (
+      !activeSheet ||
+      activeSheet.scale_value == null ||
+      !activeCondition ||
+      activeTool !== "area" ||
+      areaRing.length < 3
+    ) {
+      return null;
+    }
+    const pdfSq = polygonAreaAbs(areaRing);
+    const r = realAreaFromPdfSq(pdfSq, activeSheet.scale_value);
+    if (r == null) return null;
+    return formatAreaQuantity(r, activeCondition.unit);
+  }, [activeSheet, activeCondition, activeTool, areaRing]);
+
+  const countAggregateLabel = useMemo(() => {
+    if (!activeConditionId || activeCondition?.measurement_type !== "count" || !measurementAggregates) {
+      return null;
+    }
+    const row = measurementAggregates.sheet_by_condition.find(
+      (x) => x.condition_id === activeConditionId && x.measurement_type === "count"
+    );
+    if (!row) return null;
+    const n = Math.round(row.sum_measured_value);
+    return `${activeCondition?.name ?? "Count"}: ${n}`;
+  }, [measurementAggregates, activeConditionId, activeCondition]);
+
+  const projectCountHint = useMemo(() => {
+    if (!activeConditionId || activeCondition?.measurement_type !== "count" || !measurementAggregates) {
+      return null;
+    }
+    const row = measurementAggregates.project_by_condition.find(
+      (x) => x.condition_id === activeConditionId && x.measurement_type === "count"
+    );
+    if (!row) return null;
+    return `Project: ${Math.round(row.sum_measured_value)}`;
+  }, [measurementAggregates, activeConditionId, activeCondition]);
+
+  const areaAggregateSheetLabel = useMemo(() => {
+    if (!activeConditionId || activeCondition?.measurement_type !== "area" || !measurementAggregates) {
+      return null;
+    }
+    const row = measurementAggregates.sheet_by_condition.find(
+      (x) => x.condition_id === activeConditionId && x.measurement_type === "area"
+    );
+    if (!row || !activeCondition) return null;
+    return `Sheet: ${formatAreaQuantity(row.sum_measured_value, activeCondition.unit)}`;
+  }, [measurementAggregates, activeConditionId, activeCondition]);
+
+  const areaAggregateProjectLabel = useMemo(() => {
+    if (!activeConditionId || activeCondition?.measurement_type !== "area" || !measurementAggregates) {
+      return null;
+    }
+    const row = measurementAggregates.project_by_condition.find(
+      (x) => x.condition_id === activeConditionId && x.measurement_type === "area"
+    );
+    if (!row || !activeCondition) return null;
+    return `Project: ${formatAreaQuantity(row.sum_measured_value, activeCondition.unit)}`;
+  }, [measurementAggregates, activeConditionId, activeCondition]);
+
   const onSearchRectsChange = useCallback((n: number) => {
     setPageMatchCount(n);
+  }, []);
+
+  const toolLabel = useCallback((t: TakeoffTool) => {
+    const labels: Record<TakeoffTool, string> = {
+      select: "Select",
+      linear: "Linear",
+      area: "Area",
+      count: "Count",
+      scale: "Scale",
+    };
+    return labels[t];
   }, []);
 
   useEffect(() => {
@@ -207,10 +926,58 @@ export function PlanViewerWorkspace({
         onChange={setActiveTool}
         onSearchClick={() => setSearchPanelOpen(true)}
         canCalibrateScale={canEditMeasurements}
+        conditions={conditions}
+        activeConditionId={activeConditionId}
+        onConditionChange={(id) => setActiveConditionId(id)}
+        conditionPickerDisabled={conditionsLoading || conditions.length === 0}
       />
     );
     return () => setTakeoffSlot(null);
-  }, [activeTool, setTakeoffSlot, canEditMeasurements]);
+  }, [
+    activeTool,
+    setTakeoffSlot,
+    canEditMeasurements,
+    conditions,
+    activeConditionId,
+    conditionsLoading,
+  ]);
+
+  useEffect(() => {
+    setStatusBarSlot(
+      <>
+        <span className="shrink-0 text-muted-foreground">Condition</span>
+        {activeCondition ? (
+          <>
+            <span
+              className="h-2 w-2 shrink-0 rounded-full border border-border"
+              style={{ backgroundColor: activeCondition.color }}
+            />
+            <span className="min-w-0 truncate font-medium text-foreground">
+              {activeCondition.name}
+            </span>
+          </>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+        <span className="mx-2 text-border">|</span>
+        <span className="shrink-0 text-muted-foreground">Tool</span>
+        <span className="font-medium text-foreground">{toolLabel(activeTool)}</span>
+        {conditionsError ? (
+          <>
+            <span className="mx-2 text-border">|</span>
+            <span className="truncate text-destructive">{conditionsError}</span>
+          </>
+        ) : null}
+      </>
+    );
+    return () => setStatusBarSlot(null);
+  }, [
+    activeCondition,
+    activeTool,
+    conditionsError,
+    setStatusBarSlot,
+    toolLabel,
+  ]);
 
   useEffect(() => {
     if (activeTool !== "scale" || !canEditMeasurements) {
@@ -265,10 +1032,12 @@ export function PlanViewerWorkspace({
         real_unit: realUnit,
       });
       await onSheetsRefresh();
+      void loadSheetMeasurements();
+      void loadConditions();
       setScaleDraft(null);
       setActiveTool("select");
     },
-    [activeSheetId, pendingPdfLength, onSheetsRefresh]
+    [activeSheetId, pendingPdfLength, onSheetsRefresh, loadSheetMeasurements, loadConditions]
   );
 
   const nextLocalMatch = useCallback(() => {
@@ -312,6 +1081,88 @@ export function PlanViewerWorkspace({
         return;
       }
 
+      if (e.key === "Escape") {
+        if (areaRingRef.current.length > 0) {
+          e.preventDefault();
+          setAreaRing([]);
+          setAreaHoverPdf(null);
+          return;
+        }
+        if (linearDraftRef.current.length > 0) {
+          e.preventDefault();
+          setLinearDraft([]);
+          setLinearHoverPdf(null);
+          return;
+        }
+        if (activeTool === "count") {
+          e.preventDefault();
+          setActiveTool("select");
+          return;
+        }
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && canEditMeasurements) {
+        const idsToDelete =
+          selectedCountIds.size > 0
+            ? [...selectedCountIds]
+            : selectedMeasurementId
+              ? [selectedMeasurementId]
+              : [];
+        if (idsToDelete.length === 0) return;
+        e.preventDefault();
+        void (async () => {
+          try {
+            await Promise.all(
+              idsToDelete.map((mid) => api.delete(`/api/v1/measurements/${mid}`))
+            );
+            setSelectedMeasurementId(null);
+            setSelectedCountIds(new Set());
+            setMeasurementUndoStack((s) => s.filter((x) => !idsToDelete.includes(x)));
+            await loadSheetMeasurements();
+            void loadConditions();
+          } catch {
+            //
+          }
+        })();
+        return;
+      }
+      if (e.key === "Enter" && activeTool === "linear" && linearDraftRef.current.length >= 2) {
+        e.preventDefault();
+        void finishLinearMeasurement(linearDraftRef.current);
+        return;
+      }
+      if (e.key === "Enter" && activeTool === "area" && areaRingRef.current.length >= 3) {
+        e.preventDefault();
+        submitAreaPolygonStep();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {
+        if (activeTool === "area" && areaRingRef.current.length > 0) {
+          e.preventDefault();
+          setAreaRing((d) => d.slice(0, -1));
+          return;
+        }
+        if (linearDraftRef.current.length > 0) {
+          e.preventDefault();
+          setLinearDraft((d) => d.slice(0, -1));
+          return;
+        }
+        if (measurementUndoStack.length > 0 && canEditMeasurements) {
+          e.preventDefault();
+          const id = measurementUndoStack[measurementUndoStack.length - 1]!;
+          void (async () => {
+            try {
+              await api.delete(`/api/v1/measurements/${id}`);
+              setMeasurementUndoStack((s) => s.slice(0, -1));
+              await loadSheetMeasurements();
+              void loadConditions();
+            } catch {
+              //
+            }
+          })();
+          return;
+        }
+      }
+
       if (e.key === "+" || e.key === "=") {
         e.preventDefault();
         canvasRef.current?.zoomIn();
@@ -329,6 +1180,20 @@ export function PlanViewerWorkspace({
           setUserSheetId(planSheets[idx + 1].id);
         }
       } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (/^[1-9]$/.test(e.key) && conditions.length > 0) {
+          const idx = parseInt(e.key, 10) - 1;
+          if (idx < conditions.length && idx < 9) {
+            e.preventDefault();
+            const c = conditions[idx]!;
+            if (activeTool === "linear" || activeTool === "area" || activeTool === "count") {
+              if (c.measurement_type !== activeTool) {
+                setActiveTool(c.measurement_type as TakeoffTool);
+              }
+            }
+            setActiveConditionId(c.id);
+            return;
+          }
+        }
         const k = e.key.toLowerCase();
         if (["v", "l", "a", "c", "s"].includes(k)) {
           e.preventDefault();
@@ -351,6 +1216,15 @@ export function PlanViewerWorkspace({
       nextLocalMatch,
       prevLocalMatch,
       canEditMeasurements,
+      conditions,
+      activeTool,
+      finishLinearMeasurement,
+      submitAreaPolygonStep,
+      measurementUndoStack,
+      loadSheetMeasurements,
+      loadConditions,
+      selectedMeasurementId,
+      selectedCountIds,
     ]
   );
 
@@ -536,6 +1410,39 @@ export function PlanViewerWorkspace({
             </div>
           )}
 
+          {activeTool === "linear" &&
+            activeCondition &&
+            activeCondition.measurement_type !== "linear" && (
+              <div className="flex shrink-0 items-center gap-2 border-b border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+                <span>
+                  Select a <strong className="font-semibold">linear</strong> condition in the panel
+                  (or create one) to draw linear takeoff.
+                </span>
+              </div>
+            )}
+
+          {activeTool === "area" &&
+            activeCondition &&
+            activeCondition.measurement_type !== "area" && (
+              <div className="flex shrink-0 items-center gap-2 border-b border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+                <span>
+                  Select an <strong className="font-semibold">area</strong> condition in the panel (or
+                  create one) for area takeoff.
+                </span>
+              </div>
+            )}
+
+          {activeTool === "count" &&
+            activeCondition &&
+            activeCondition.measurement_type !== "count" && (
+              <div className="flex shrink-0 items-center gap-2 border-b border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+                <span>
+                  Select a <strong className="font-semibold">count</strong> condition in the panel (or
+                  create one) for count takeoff.
+                </span>
+              </div>
+            )}
+
           {docError && (
             <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               {docError}
@@ -577,8 +1484,45 @@ export function PlanViewerWorkspace({
             searchQuery={debouncedSearch.trim().length >= 2 ? debouncedSearch.trim() : null}
             searchMatchIndex={localPageMatchIdx}
             onSearchRectsChange={onSearchRectsChange}
+            linearTakeoff={linearTakeoff}
+            linearOverlay={linearOverlay}
+            areaPolygonTakeoff={areaPolygonTakeoff}
+            countTakeoff={countTakeoff}
+            areaOverlay={areaOverlay}
+            countOverlay={countOverlay}
+            selectToolProbe={selectToolProbe}
             className="min-h-0 flex-1"
           />
+
+          <div
+            className="h-0.5 shrink-0"
+            style={{
+              backgroundColor: activeCondition?.color ?? "transparent",
+              opacity: activeCondition ? 0.85 : 0,
+            }}
+            aria-hidden
+          />
+
+          {selectedMeasurementId &&
+            selectedMeasurement &&
+            canEditMeasurements &&
+            activeTool === "select" &&
+            compatibleConditionsForReassign.length > 0 ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border bg-surface px-3 py-1.5 text-[11px]">
+              <span className="text-muted-foreground">Change condition</span>
+              <select
+                className="max-w-[200px] rounded-md border border-border bg-background px-2 py-0.5 text-[11px]"
+                value={selectedMeasurement.condition_id}
+                onChange={(e) => void onReassignMeasurementCondition(e.target.value)}
+              >
+                {compatibleConditionsForReassign.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
 
           <div className="flex h-7 shrink-0 items-center border-t border-border bg-surface px-3 text-xs text-muted-foreground">
             <span className="min-w-0 truncate">
@@ -596,6 +1540,40 @@ export function PlanViewerWorkspace({
                 : "Scale: not calibrated"}
               {activeSheet?.scale_source === "auto" ? " (auto)" : ""}
             </span>
+            {linearRunningDisplay && (
+              <>
+                <span className="mx-2 text-border">|</span>
+                <span className="font-mono text-[11px] text-primary">
+                  Draft: {linearRunningDisplay}
+                </span>
+              </>
+            )}
+            {areaDraftRunningDisplay && (
+              <>
+                <span className="mx-2 text-border">|</span>
+                <span className="font-mono text-[11px] text-primary">
+                  Draft area: {areaDraftRunningDisplay}
+                </span>
+              </>
+            )}
+            {countAggregateLabel && (
+              <>
+                <span className="mx-2 text-border">|</span>
+                <span className="font-mono text-[11px] text-foreground/90">
+                  {countAggregateLabel}
+                  {projectCountHint ? ` · ${projectCountHint}` : ""}
+                </span>
+              </>
+            )}
+            {activeCondition?.measurement_type === "area" && areaAggregateSheetLabel && (
+              <>
+                <span className="mx-2 text-border">|</span>
+                <span className="min-w-0 truncate font-mono text-[11px] text-foreground/90">
+                  {areaAggregateSheetLabel}
+                  {areaAggregateProjectLabel ? ` · ${areaAggregateProjectLabel}` : ""}
+                </span>
+              </>
+            )}
             <span className="mx-2 text-border">|</span>
             <span className="hidden sm:inline">
               Wheel zoom · Middle-click or Space+drag pan · [ ] sheets · Ctrl+F find
@@ -617,15 +1595,22 @@ export function PlanViewerWorkspace({
           maxSize="100%"
           className="flex min-h-0 min-w-0 flex-col border-l border-border bg-surface"
         >
-          <div className="border-b border-border px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Quantities
-          </div>
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-center text-xs text-muted-foreground">
-            <p>Quantities panel ships in a later sprint.</p>
-            <p className="text-[10px]">
-              Tree view, overrides, and bidirectional linking will appear here.
-            </p>
-          </div>
+          {conditionsLoading ? (
+            <div className="flex flex-1 items-center justify-center gap-2 p-4 text-xs text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading conditions…
+            </div>
+          ) : (
+            <ConditionManagerPanel
+              projectId={projectId}
+              conditions={conditions}
+              activeConditionId={activeConditionId}
+              onActiveConditionChange={setActiveConditionId}
+              onConditionsChange={refreshConditionsAndSheetMeasurements}
+              onSheetMeasurementsRefresh={loadSheetMeasurements}
+              canManage={canManageConditions}
+            />
+          )}
         </Panel>
       </Group>
     </div>
