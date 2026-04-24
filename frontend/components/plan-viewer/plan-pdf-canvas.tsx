@@ -20,6 +20,7 @@ import {
   findTextMatchRects,
   type ViewportRect,
 } from "@/components/plan-viewer/pdf-text-search";
+import { simplifyPolylinePdf } from "@/lib/polyline-simplify";
 
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import type { PageViewport } from "pdfjs-dist";
@@ -91,9 +92,13 @@ export interface LinearOverlayPolyline {
 
 export interface LinearTakeoffHandlers {
   active: boolean;
+  /** Default click-to-click polyline; hold-drag freehand when ``freehand``. */
+  mode?: "polyline" | "freehand";
   onPdfPoint: (pt: PdfPoint) => void;
   onHoverPdf: (pt: PdfPoint | null) => void;
   onComplete: () => void;
+  /** When ``mode === "freehand"``, called with simplified vertices on primary pointer up. */
+  onFreehandStroke?: (vertices: PdfPoint[]) => void;
 }
 
 export interface AreaOverlaySaved {
@@ -252,6 +257,8 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
       lastY: number;
     } | null>(null);
     const spaceDownRef = useRef(false);
+    const linearFreehandStrokeRef = useRef<PdfPoint[] | null>(null);
+    const linearFreehandPointerIdRef = useRef<number | null>(null);
     const centeredForKeyRef = useRef<string | null>(null);
 
     const liveRef = useRef({
@@ -713,7 +720,16 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
         const pt = clientToPdfPoint(e.clientX, e.clientY);
         if (pt) {
           e.preventDefault();
-          linearTakeoff.onPdfPoint(pt);
+          if (
+            linearTakeoff.mode === "freehand" &&
+            linearTakeoff.onFreehandStroke
+          ) {
+            linearFreehandStrokeRef.current = [pt];
+            linearFreehandPointerIdRef.current = e.pointerId;
+            (e.target as HTMLElement).setPointerCapture(e.pointerId);
+          } else {
+            linearTakeoff.onPdfPoint(pt);
+          }
           return;
         }
       }
@@ -757,6 +773,18 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
       }
       if (linearTakeoff?.active) {
         const pt = clientToPdfPoint(e.clientX, e.clientY);
+        const stroke = linearFreehandStrokeRef.current;
+        if (
+          stroke &&
+          linearTakeoff.mode === "freehand" &&
+          linearTakeoff.onFreehandStroke &&
+          pt
+        ) {
+          const last = stroke[stroke.length - 1]!;
+          if (Math.hypot(pt.x - last.x, pt.y - last.y) >= 0.5) {
+            linearFreehandStrokeRef.current = [...stroke, pt];
+          }
+        }
         linearTakeoff.onHoverPdf(pt);
       }
       const p = panningRef.current;
@@ -769,6 +797,27 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
     };
 
     const onPointerUp = (e: React.PointerEvent) => {
+      if (
+        linearTakeoff?.active &&
+        linearTakeoff.mode === "freehand" &&
+        linearTakeoff.onFreehandStroke &&
+        linearFreehandPointerIdRef.current === e.pointerId
+      ) {
+        const raw = linearFreehandStrokeRef.current;
+        linearFreehandStrokeRef.current = null;
+        linearFreehandPointerIdRef.current = null;
+        try {
+          (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+        } catch {
+          //
+        }
+        if (raw && raw.length >= 2) {
+          e.preventDefault();
+          const simplified = simplifyPolylinePdf(raw, 1.25) as PdfPoint[];
+          linearTakeoff.onFreehandStroke(simplified);
+        }
+        linearTakeoff.onHoverPdf(null);
+      }
       if (
         countTakeoff?.active &&
         e.button === 0 &&
@@ -824,7 +873,7 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
             areaPolygonTakeoff.onComplete();
             return;
           }
-          if (linearTakeoff?.active) {
+          if (linearTakeoff?.active && linearTakeoff.mode !== "freehand") {
             e.preventDefault();
             linearTakeoff.onComplete();
           }

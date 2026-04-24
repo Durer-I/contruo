@@ -77,6 +77,8 @@ async def test_list_measurements_returns_array():
         created_by=ctx.user_id,
         created_at=now,
         updated_at=now,
+        deductions=[],
+        gross_measured_value=None,
     )
 
     with patch(

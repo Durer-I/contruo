@@ -10,7 +10,7 @@ import io
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Any, Callable
 
 try:
     import fitz  # type: ignore[import-untyped]
@@ -43,6 +43,53 @@ class PageInfo:
     sheet_name: str | None = None
     text_content: str = ""
     thumbnail_png: bytes | None = None
+    #: Flattened line segments from vector paths (PDF user space) for snap-to-geometry.
+    vector_snap_segments: list[dict[str, float]] = field(default_factory=list)
+
+
+def extract_vector_snap_segments(page: Any, *, max_segments: int = 30_000) -> list[dict[str, float]]:
+    """Collect straight segments from PyMuPDF drawing paths (best-effort)."""
+    if fitz is None:
+        return []
+    out: list[dict[str, float]] = []
+    try:
+        drawings = page.get_drawings()
+    except Exception:  # pragma: no cover
+        logger.exception("get_drawings failed")
+        return []
+    for path in drawings:
+        for it in path.get("items") or []:
+            if len(out) >= max_segments:
+                return out
+            if not it:
+                continue
+            kind = it[0]
+            try:
+                if kind == "l" and len(it) >= 3:
+                    p1, p2 = it[1], it[2]
+                    out.append(
+                        {
+                            "x1": float(p1.x),
+                            "y1": float(p1.y),
+                            "x2": float(p2.x),
+                            "y2": float(p2.y),
+                        }
+                    )
+                elif kind == "re" and len(it) >= 2:
+                    r = it[1]
+                    x0, y0, x1, y1 = float(r.x0), float(r.y0), float(r.x1), float(r.y1)
+                    for a, b, c, d in (
+                        (x0, y0, x1, y0),
+                        (x1, y0, x1, y1),
+                        (x1, y1, x0, y1),
+                        (x0, y1, x0, y0),
+                    ):
+                        if len(out) >= max_segments:
+                            return out
+                        out.append({"x1": a, "y1": b, "x2": c, "y2": d})
+            except (TypeError, ValueError, AttributeError):
+                continue
+    return out
 
 
 @dataclass
@@ -148,6 +195,7 @@ def extract_pdf(
 
             text = page.get_text("text") or ""
             sheet_name = _extract_sheet_name(text)
+            snap_segs = extract_vector_snap_segments(page)
 
             pages.append(
                 PageInfo(
@@ -157,6 +205,7 @@ def extract_pdf(
                     sheet_name=sheet_name,
                     text_content=text,
                     thumbnail_png=thumb_png,
+                    vector_snap_segments=snap_segs,
                 )
             )
 

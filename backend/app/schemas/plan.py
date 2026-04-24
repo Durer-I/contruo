@@ -36,6 +36,8 @@ class SheetResponse(BaseModel):
     height_px: int | None
     thumbnail_url: str | None = None
     created_at: datetime
+    #: PDF vector line segments for snap-to-geometry; null if not extracted yet.
+    vector_snap_segments: list[dict[str, float]] | None = None
 
 
 class PatchSheetScaleRequest(BaseModel):

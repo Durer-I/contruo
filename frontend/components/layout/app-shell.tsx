@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { TopBarCenterProvider } from "@/providers/top-bar-center-provider";
 import { TakeoffToolbarSlotProvider } from "@/providers/takeoff-toolbar-slot-provider";
 import { StatusBarSlotProvider } from "@/providers/status-bar-slot-provider";
@@ -8,6 +9,27 @@ import { Sidebar } from "./sidebar";
 import { StatusBar } from "./status-bar";
 import { useAuth } from "@/providers/auth-provider";
 import { cn } from "@/lib/utils";
+
+function DesktopViewportWarning() {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)");
+    const apply = () => setNarrow(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+  if (!narrow) return null;
+  return (
+    <div
+      className="shrink-0 border-b border-amber-500/40 bg-amber-500/15 px-3 py-2 text-center text-xs text-amber-950 dark:text-amber-100"
+      role="status"
+    >
+      Contruo is built for desktop estimating. For the intended layout, use a window at least{" "}
+      <strong>1024px</strong> wide (larger is better).
+    </div>
+  );
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -35,7 +57,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
             <div className="flex flex-1 overflow-hidden">
               <Sidebar />
-              <main className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</main>
+              <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <DesktopViewportWarning />
+                {children}
+              </main>
             </div>
             <StatusBar />
           </div>

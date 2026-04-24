@@ -22,6 +22,27 @@ from app.utils.scale_detect import detect_scale
 
 logger = logging.getLogger(__name__)
 
+#: Avoid one huge INSERT/commit (timeouts on pooler / long locks) for large drawings.
+_MAX_TEXT_CHARS_PER_SHEET = 2_000_000
+#: Still plenty for snap; full extract may collect more in memory during PDF parse.
+_MAX_VECTOR_SEGMENTS_PER_SHEET = 12_000
+
+
+def _sheet_text_for_db(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    if len(raw) <= _MAX_TEXT_CHARS_PER_SHEET:
+        return raw
+    return raw[: _MAX_TEXT_CHARS_PER_SHEET]
+
+
+def _sheet_vectors_for_db(segments: list | None) -> list | None:
+    if not segments:
+        return None
+    if len(segments) <= _MAX_VECTOR_SEGMENTS_PER_SHEET:
+        return segments
+    return segments[:_MAX_VECTOR_SEGMENTS_PER_SHEET]
+
 
 def _sync_database_url(url: str) -> str:
     """Celery tasks are synchronous; asyncpg is async-only so swap it for psycopg v3.
@@ -164,14 +185,25 @@ def process_plan(self, plan_id_str: str) -> dict:
                     width_px=page.width_px,
                     height_px=page.height_px,
                     thumbnail_path=thumb_path,
-                    text_content=page.text_content or None,
+                    text_content=_sheet_text_for_db(page.text_content),
                     scale_value=hint.scale_value if hint else None,
                     scale_unit=hint.scale_unit if hint else None,
                     scale_label=(hint.scale_label[:100] if hint else None),
                     scale_source="auto" if hint else None,
+                    vector_snap_segments=_sheet_vectors_for_db(
+                        page.vector_snap_segments or None
+                    ),
                 )
                 session.add(sheet)
+                # One commit per sheet avoids a single massive transaction (large text +
+                # JSONB segments on many pages can exceed statement timeouts or stall the pooler).
+                session.commit()
 
+            logger.info(
+                "All sheets inserted for plan %s; marking ready (%s pages)",
+                plan_id,
+                result.page_count,
+            )
             session.execute(
                 update(Plan)
                 .where(Plan.id == plan_id)
@@ -183,6 +215,7 @@ def process_plan(self, plan_id_str: str) -> dict:
                 )
             )
             session.commit()
+            logger.info("Plan %s marked ready", plan_id)
     except Exception as e:
         logger.exception("Failed to persist processed sheets")
         _mark_error(plan_id, f"Persist failed: {e}")

@@ -6,6 +6,11 @@ export interface DerivedQuantityInfo {
   error: string | null;
 }
 
+/** One deduction run along the plan (open polyline, PDF points). */
+export interface LinearDeductionPolyline {
+  vertices: Array<{ x: number; y: number }>;
+}
+
 export interface MeasurementInfo {
   id: string;
   org_id: string;
@@ -21,6 +26,10 @@ export interface MeasurementInfo {
   created_at: string;
   updated_at: string;
   derived_quantities?: DerivedQuantityInfo[];
+  /** Linear: backout polylines; each item is `{ vertices: [...] }`. */
+  deductions?: LinearDeductionPolyline[] | null;
+  /** Linear: path length before deductions (same unit as measured_value). */
+  gross_measured_value?: number | null;
 }
 
 export interface LinearGeometry {

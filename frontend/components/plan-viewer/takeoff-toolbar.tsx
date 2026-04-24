@@ -177,7 +177,7 @@ export function TakeoffToolbar({
       {onSearchClick && (
         <button
         type="button"
-        title="Search"
+        title="Search (Ctrl+F). Press ? in the plan workspace for all shortcuts."
         aria-label="Search"
         onClick={onSearchClick}
         className="ml-1 flex shrink-0 items-center gap-1 rounded-2xl px-2 py-1 text-xs text-muted-foreground hover:bg-surface-overlay hover:text-foreground"

@@ -50,10 +50,18 @@ import { TakeoffToolbar, type TakeoffTool } from "@/components/plan-viewer/takeo
 import { ScaleCalibrationDialog } from "@/components/plan-viewer/scale-calibration-dialog";
 import { ScaleIntroDialog } from "@/components/plan-viewer/scale-intro-dialog";
 import { PlanSearchPanel } from "@/components/plan-viewer/plan-search-panel";
+import { KeyboardShortcutsDialog } from "@/components/plan-viewer/keyboard-shortcuts-dialog";
+import {
+  geometryForRecreate,
+  isEditableTarget,
+  isInsideDialogContent,
+  type MeasurementRedoSnapshot,
+} from "@/lib/plan-viewer-keyboard";
 import type { LineStyleDash } from "@/components/plan-viewer/plan-pdf-canvas";
 import type {
   AreaGeometry,
   CountGeometry,
+  LinearDeductionPolyline,
   LinearGeometry,
   MeasurementAggregatesResponse,
   MeasurementInfo,
@@ -71,6 +79,7 @@ import {
   polygonAreaAbs,
   realAreaFromPdfSq,
 } from "@/lib/area-geometry";
+
 interface PlanViewerWorkspaceProps {
   projectId: string;
   projectName: string;
@@ -199,6 +208,8 @@ export function PlanViewerWorkspace({
   const [projectMeasurements, setProjectMeasurements] = useState<MeasurementInfo[]>([]);
   const [rightPanelTab, setRightPanelTab] = useState<"quantities" | "conditions">("quantities");
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
+  const [measurementRedoStack, setMeasurementRedoStack] = useState<MeasurementRedoSnapshot[]>([]);
   const [measurementAggregates, setMeasurementAggregates] =
     useState<MeasurementAggregatesResponse | null>(null);
 
@@ -213,6 +224,10 @@ export function PlanViewerWorkspace({
   const [countPendingDots, setCountPendingDots] = useState<
     { tempId: string; x: number; y: number }[]
   >([]);
+
+  const [deductionEditMeasurementId, setDeductionEditMeasurementId] = useState<string | null>(null);
+  const [deductionDraft, setDeductionDraft] = useState<PdfPoint[]>([]);
+  const [deductionHoverPdf, setDeductionHoverPdf] = useState<PdfPoint | null>(null);
 
   const loadProjectMeasurements = useCallback(async () => {
     try {
@@ -322,6 +337,7 @@ export function PlanViewerWorkspace({
 
   useEffect(() => {
     setMeasurementUndoStack([]);
+    setMeasurementRedoStack([]);
   }, [activeSheetId]);
 
   useEffect(() => {
@@ -430,6 +446,8 @@ export function PlanViewerWorkspace({
 
   const linearDraftRef = useRef<PdfPoint[]>([]);
   linearDraftRef.current = linearDraft;
+  const deductionDraftRef = useRef<PdfPoint[]>([]);
+  deductionDraftRef.current = deductionDraft;
   const areaRingRef = useRef<PdfPoint[]>([]);
   areaRingRef.current = areaRing;
 
@@ -444,11 +462,17 @@ export function PlanViewerWorkspace({
     activeTool === "linear" &&
     activeSheet?.scale_value != null &&
     activeCondition?.measurement_type === "linear" &&
-    Boolean(activeConditionId);
+    Boolean(activeConditionId) &&
+    !deductionEditMeasurementId;
 
   const finishLinearMeasurement = useCallback(
     async (verts: PdfPoint[]) => {
       if (verts.length < 2 || !activeSheetId || !activeConditionId) {
+        setLinearDraft([]);
+        setLinearHoverPdf(null);
+        return;
+      }
+      if (polylineLengthPdf(verts) < 1e-4) {
         setLinearDraft([]);
         setLinearHoverPdf(null);
         return;
@@ -464,6 +488,7 @@ export function PlanViewerWorkspace({
           }
         );
         setMeasurementUndoStack((s) => [...s, created.id]);
+        setMeasurementRedoStack([]);
         setLinearDraft([]);
         setLinearHoverPdf(null);
         setSheetMeasurements((prev) => [...prev, created]);
@@ -517,6 +542,7 @@ export function PlanViewerWorkspace({
           },
         });
         setMeasurementUndoStack((s) => [...s, created.id]);
+        setMeasurementRedoStack([]);
         setAreaRing([]);
         setAreaHoverPdf(null);
         setSheetMeasurements((prev) => [...prev, created]);
@@ -558,6 +584,7 @@ export function PlanViewerWorkspace({
         );
         setCountPendingDots((p) => p.filter((d) => d.tempId !== tempId));
         setMeasurementUndoStack((s) => [...s, created.id]);
+        setMeasurementRedoStack([]);
         setSheetMeasurements((prev) => [...prev, created]);
         void loadSheetMeasurements();
         void loadConditions();
@@ -626,7 +653,10 @@ export function PlanViewerWorkspace({
   );
 
   const onQuantitiesPatch = useCallback(
-    async (id: string, patch: { override_value?: number | null }) => {
+    async (
+      id: string,
+      patch: { override_value?: number | null; deductions?: LinearDeductionPolyline[] }
+    ) => {
       try {
         await api.patch(`/api/v1/measurements/${id}`, patch);
         await loadSheetMeasurements();
@@ -800,10 +830,84 @@ export function PlanViewerWorkspace({
     ]
   );
 
+  const appendDeductionPolyline = useCallback(
+    async (verts: PdfPoint[]) => {
+      if (verts.length < 2 || !deductionEditMeasurementId) {
+        setDeductionDraft([]);
+        setDeductionHoverPdf(null);
+        return;
+      }
+      if (polylineLengthPdf(verts) < 1e-4) {
+        setDeductionDraft([]);
+        setDeductionHoverPdf(null);
+        return;
+      }
+      const m = sheetMeasurements.find((x) => x.id === deductionEditMeasurementId);
+      if (!m || m.measurement_type !== "linear" || m.geometry.type !== "linear") return;
+      const prior: LinearDeductionPolyline[] = Array.isArray(m.deductions)
+        ? m.deductions.map((d) => ({
+            vertices: (d.vertices ?? []).map((v) => ({ x: v.x, y: v.y })),
+          }))
+        : [];
+      const newVerts = verts.map((v) => ({ x: v.x, y: v.y }));
+      const deductionsPayload = [...prior, { vertices: newVerts }];
+      try {
+        await api.patch(`/api/v1/measurements/${deductionEditMeasurementId}`, {
+          deductions: deductionsPayload,
+        });
+        setDeductionDraft([]);
+        setDeductionHoverPdf(null);
+        await loadSheetMeasurements();
+        void loadConditions();
+        bumpMeasurementsRemote();
+      } catch {
+        //
+      }
+    },
+    [
+      deductionEditMeasurementId,
+      sheetMeasurements,
+      loadSheetMeasurements,
+      loadConditions,
+      bumpMeasurementsRemote,
+    ]
+  );
+
+  const deductionLinearTakeoff = useMemo(() => {
+    if (
+      !deductionEditMeasurementId ||
+      !canEditMeasurements ||
+      activeSheet?.scale_value == null
+    ) {
+      return null;
+    }
+    return {
+      active: true,
+      mode: "polyline" as const,
+      onPdfPoint: (pt: PdfPoint) => {
+        setDeductionDraft((d) => {
+          if (d.length > 0) {
+            const last = d[d.length - 1]!;
+            if (Math.hypot(pt.x - last.x, pt.y - last.y) < 0.25) return d;
+          }
+          return [...d, pt];
+        });
+      },
+      onHoverPdf: (h: PdfPoint | null) => setDeductionHoverPdf(h),
+      onComplete: () => void appendDeductionPolyline(deductionDraftRef.current),
+    };
+  }, [
+    deductionEditMeasurementId,
+    canEditMeasurements,
+    activeSheet?.scale_value,
+    appendDeductionPolyline,
+  ]);
+
   const linearTakeoff = useMemo(() => {
     if (!linearTakeoffEnabled) return null;
     return {
       active: true,
+      mode: "polyline" as const,
       onPdfPoint: (pt: PdfPoint) => {
         setLinearDraft((d) => {
           if (d.length > 0) {
@@ -813,10 +917,12 @@ export function PlanViewerWorkspace({
           return [...d, pt];
         });
       },
-      onHoverPdf: setLinearHoverPdf,
+      onHoverPdf: (h: PdfPoint | null) => setLinearHoverPdf(h),
       onComplete: () => void finishLinearMeasurement(linearDraftRef.current),
     };
   }, [linearTakeoffEnabled, finishLinearMeasurement]);
+
+  const linearTakeoffForCanvas = deductionLinearTakeoff ?? linearTakeoff;
 
   const areaPolygonTakeoff = useMemo(() => {
     if (
@@ -914,18 +1020,45 @@ export function PlanViewerWorkspace({
       })
       .filter((p) => p.vertices.length >= 2);
 
-    const draft =
-      linearTakeoffEnabled && linearDraft.length > 0 && activeCondition
-        ? {
-            vertices: linearDraft,
-            preview: linearHoverPdf,
-            color: activeCondition.color,
-            lineWidth: activeCondition.line_width,
-            dash: conditionDash(activeCondition.line_style),
-          }
-        : null;
+    const deductionPolylines = sheetMeasurements.flatMap((m) => {
+      if (m.measurement_type !== "linear" || !Array.isArray(m.deductions)) return [];
+      return m.deductions.flatMap((d, di) => {
+        const vs = d.vertices;
+        if (!vs || vs.length < 2) return [];
+        return [
+          {
+            id: `${m.id}-ded-${di}`,
+            vertices: vs.map((v) => ({ x: v.x, y: v.y })),
+            color: "#f97316",
+            lineWidth: 2,
+            dash: "dotted" as LineStyleDash,
+            emphasize: false,
+            remoteLockColor: remoteLocks.get(m.id)?.color,
+          },
+        ];
+      });
+    });
 
-    return { polylines, draft, vertexHandles: null };
+    const draft =
+      deductionEditMeasurementId && deductionDraft.length > 0
+        ? {
+            vertices: deductionDraft,
+            preview: deductionHoverPdf,
+            color: "#f97316",
+            lineWidth: 2,
+            dash: "dotted" as LineStyleDash,
+          }
+        : linearTakeoffEnabled && linearDraft.length > 0 && activeCondition
+          ? {
+              vertices: linearDraft,
+              preview: linearHoverPdf,
+              color: activeCondition.color,
+              lineWidth: activeCondition.line_width,
+              dash: conditionDash(activeCondition.line_style),
+            }
+          : null;
+
+    return { polylines: [...polylines, ...deductionPolylines], draft, vertexHandles: null };
   }, [
     sheetMeasurements,
     conditions,
@@ -933,6 +1066,9 @@ export function PlanViewerWorkspace({
     linearHoverPdf,
     activeCondition,
     linearTakeoffEnabled,
+    deductionEditMeasurementId,
+    deductionDraft,
+    deductionHoverPdf,
     selectedIds,
     remoteLocks,
   ]);
@@ -1232,14 +1368,9 @@ export function PlanViewerWorkspace({
 
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (
-        t &&
-        (t.tagName === "INPUT" ||
-          t.tagName === "TEXTAREA" ||
-          t.isContentEditable)
-      ) {
-        if (searchPanelOpen && t.tagName === "INPUT") {
+      const el = e.target instanceof HTMLElement ? e.target : null;
+      if (isEditableTarget(el)) {
+        if (searchPanelOpen && el?.tagName === "INPUT") {
           if (e.key === "Escape") {
             e.preventDefault();
             setSearchPanelOpen(false);
@@ -1252,6 +1383,59 @@ export function PlanViewerWorkspace({
             return;
           }
         }
+        return;
+      }
+
+      if (shortcutsDialogOpen) {
+        if (e.key === "?") {
+          e.preventDefault();
+          setShortcutsDialogOpen(false);
+        }
+        return;
+      }
+
+      if (el && isInsideDialogContent(el)) {
+        return;
+      }
+
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        setShortcutsDialogOpen(true);
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "z") {
+        if (
+          !canEditMeasurements ||
+          measurementRedoStack.length === 0 ||
+          linearDraftRef.current.length > 0 ||
+          areaRingRef.current.length > 0 ||
+          deductionDraftRef.current.length > 0
+        ) {
+          return;
+        }
+        e.preventDefault();
+        const snap = measurementRedoStack[measurementRedoStack.length - 1]!;
+        void (async () => {
+          try {
+            const created = await api.post<MeasurementInfo>(
+              `/api/v1/projects/${projectId}/measurements`,
+              {
+                sheet_id: snap.sheet_id,
+                condition_id: snap.condition_id,
+                measurement_type: snap.measurement_type,
+                geometry: geometryForRecreate(snap.geometry),
+              }
+            );
+            setMeasurementRedoStack((s) => s.slice(0, -1));
+            setMeasurementUndoStack((s) => [...s, created.id]);
+            await loadSheetMeasurements();
+            void loadConditions();
+            bumpMeasurementsRemote();
+          } catch {
+            //
+          }
+        })();
         return;
       }
 
@@ -1270,6 +1454,17 @@ export function PlanViewerWorkspace({
       }
 
       if (e.key === "Escape") {
+        if (deductionDraftRef.current.length > 0) {
+          e.preventDefault();
+          setDeductionDraft([]);
+          setDeductionHoverPdf(null);
+          return;
+        }
+        if (deductionEditMeasurementId) {
+          e.preventDefault();
+          setDeductionEditMeasurementId(null);
+          return;
+        }
         if (areaRingRef.current.length > 0) {
           e.preventDefault();
           setAreaRing([]);
@@ -1285,6 +1480,11 @@ export function PlanViewerWorkspace({
         if (activeTool === "count") {
           e.preventDefault();
           setActiveTool("select");
+          return;
+        }
+        if (selectedIds.size > 0) {
+          e.preventDefault();
+          setSelectedIds(new Set());
           return;
         }
       }
@@ -1308,6 +1508,15 @@ export function PlanViewerWorkspace({
         })();
         return;
       }
+      if (
+        e.key === "Enter" &&
+        deductionEditMeasurementId &&
+        deductionDraftRef.current.length >= 2
+      ) {
+        e.preventDefault();
+        void appendDeductionPolyline(deductionDraftRef.current);
+        return;
+      }
       if (e.key === "Enter" && activeTool === "linear" && linearDraftRef.current.length >= 2) {
         e.preventDefault();
         void finishLinearMeasurement(linearDraftRef.current);
@@ -1324,6 +1533,11 @@ export function PlanViewerWorkspace({
           setAreaRing((d) => d.slice(0, -1));
           return;
         }
+        if (deductionDraftRef.current.length > 0) {
+          e.preventDefault();
+          setDeductionDraft((d) => d.slice(0, -1));
+          return;
+        }
         if (linearDraftRef.current.length > 0) {
           e.preventDefault();
           setLinearDraft((d) => d.slice(0, -1));
@@ -1332,15 +1546,29 @@ export function PlanViewerWorkspace({
         if (measurementUndoStack.length > 0 && canEditMeasurements) {
           e.preventDefault();
           const id = measurementUndoStack[measurementUndoStack.length - 1]!;
+          const existing = sheetMeasurements.find((m) => m.id === id);
           void (async () => {
             try {
+              if (existing) {
+                setMeasurementRedoStack((s) => [
+                  ...s,
+                  {
+                    sheet_id: existing.sheet_id,
+                    condition_id: existing.condition_id,
+                    measurement_type: existing.measurement_type,
+                    geometry: existing.geometry,
+                  },
+                ]);
+              }
               await api.delete(`/api/v1/measurements/${id}`);
               setMeasurementUndoStack((s) => s.slice(0, -1));
               await loadSheetMeasurements();
               void loadConditions();
               bumpMeasurementsRemote();
             } catch {
-              //
+              if (existing) {
+                setMeasurementRedoStack((s) => s.slice(0, -1));
+              }
             }
           })();
           return;
@@ -1364,7 +1592,7 @@ export function PlanViewerWorkspace({
           setUserSheetId(planSheets[idx + 1].id);
         }
       } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (/^[1-9]$/.test(e.key) && conditions.length > 0) {
+        if (!e.repeat && /^[1-9]$/.test(e.key) && conditions.length > 0) {
           const idx = parseInt(e.key, 10) - 1;
           if (idx < conditions.length && idx < 9) {
             e.preventDefault();
@@ -1379,7 +1607,7 @@ export function PlanViewerWorkspace({
           }
         }
         const k = e.key.toLowerCase();
-        if (["v", "l", "a", "c", "s"].includes(k)) {
+        if (!e.repeat && ["v", "l", "a", "c", "s"].includes(k)) {
           e.preventDefault();
           if (k === "s" && !canEditMeasurements) return;
           const map: Record<string, TakeoffTool> = {
@@ -1403,6 +1631,7 @@ export function PlanViewerWorkspace({
       canExport,
       conditions,
       activeTool,
+      linearTakeoffEnabled,
       finishLinearMeasurement,
       submitAreaPolygonStep,
       measurementUndoStack,
@@ -1411,6 +1640,12 @@ export function PlanViewerWorkspace({
       selectedIds,
       bumpMeasurementsRemote,
       remoteLocks,
+      shortcutsDialogOpen,
+      measurementRedoStack,
+      projectId,
+      sheetMeasurements,
+      appendDeductionPolyline,
+      deductionEditMeasurementId,
     ]
   );
 
@@ -1437,6 +1672,10 @@ export function PlanViewerWorkspace({
         projectId={projectId}
         projectName={projectName}
         summary={exportSummary}
+      />
+      <KeyboardShortcutsDialog
+        open={shortcutsDialogOpen}
+        onOpenChange={setShortcutsDialogOpen}
       />
       <ScaleIntroDialog
         open={scaleStep === "intro"}
@@ -1506,6 +1745,8 @@ export function PlanViewerWorkspace({
                             src={sheet.thumbnail_url}
                             alt=""
                             className="aspect-[4/3] w-full rounded-sm border border-border object-cover"
+                            loading={isActive ? "eager" : "lazy"}
+                            fetchPriority={isActive ? "high" : "low"}
                           />
                         ) : (
                           <div className="flex aspect-[4/3] w-full items-center justify-center rounded-sm border border-border bg-background text-[10px] text-muted-foreground">
@@ -1595,17 +1836,17 @@ export function PlanViewerWorkspace({
 
           {sheetsRefreshing && (
             <div
-              className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground"
+              className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5 text-xs text-foreground"
               role="status"
               aria-live="polite"
             >
-              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" aria-hidden />
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-foreground" aria-hidden />
               <span>Updating sheet data…</span>
             </div>
           )}
 
           {needsScaleWarning && (
-            <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground">
               <AlertTriangle className="h-4 w-4 shrink-0" />
               <span>
                 Calibrate scale (S) before measuring — this sheet is not calibrated.
@@ -1616,7 +1857,7 @@ export function PlanViewerWorkspace({
           {activeTool === "linear" &&
             activeCondition &&
             activeCondition.measurement_type !== "linear" && (
-              <div className="flex shrink-0 items-center gap-2 border-b border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+              <div className="flex shrink-0 items-center gap-2 border-b border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-foreground">
                 <span>
                   Select a <strong className="font-semibold">linear</strong> condition in the panel
                   (or create one) to draw linear takeoff.
@@ -1627,7 +1868,7 @@ export function PlanViewerWorkspace({
           {activeTool === "area" &&
             activeCondition &&
             activeCondition.measurement_type !== "area" && (
-              <div className="flex shrink-0 items-center gap-2 border-b border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+              <div className="flex shrink-0 items-center gap-2 border-b border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-foreground">
                 <span>
                   Select an <strong className="font-semibold">area</strong> condition in the panel (or
                   create one) for area takeoff.
@@ -1638,7 +1879,7 @@ export function PlanViewerWorkspace({
           {activeTool === "count" &&
             activeCondition &&
             activeCondition.measurement_type !== "count" && (
-              <div className="flex shrink-0 items-center gap-2 border-b border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+              <div className="flex shrink-0 items-center gap-2 border-b border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-foreground">
                 <span>
                   Select a <strong className="font-semibold">count</strong> condition in the panel (or
                   create one) for count takeoff.
@@ -1646,8 +1887,33 @@ export function PlanViewerWorkspace({
               </div>
             )}
 
+          {deductionEditMeasurementId && (
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-orange-500/30 bg-orange-500/10 px-3 py-2 text-xs text-foreground">
+              <span>
+                Deduction mode: trace an opening along the wall, Enter to save segment, Esc to exit.
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-7 shrink-0 text-xs"
+                onClick={() => setDeductionEditMeasurementId(null)}
+              >
+                Done
+              </Button>
+            </div>
+          )}
+
+          {activeTool === "linear" && linearTakeoffEnabled && (
+            <div className="shrink-0 border-b border-border bg-muted/40 px-3 py-1.5 text-[11px] text-foreground">
+              {
+                "Linear takeoff: click to add points — double-click or Enter to finish, Esc to cancel the draft."
+              }
+            </div>
+          )}
+
           {docError && (
-            <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-foreground">
               {docError}
             </div>
           )}
@@ -1687,7 +1953,7 @@ export function PlanViewerWorkspace({
             searchQuery={debouncedSearch.trim().length >= 2 ? debouncedSearch.trim() : null}
             searchMatchIndex={localPageMatchIdx}
             onSearchRectsChange={onSearchRectsChange}
-            linearTakeoff={linearTakeoff}
+            linearTakeoff={linearTakeoffForCanvas}
             linearOverlay={linearOverlay}
             areaPolygonTakeoff={areaPolygonTakeoff}
             countTakeoff={countTakeoff}
@@ -1868,20 +2134,23 @@ export function PlanViewerWorkspace({
               Loading…
             </div>
           ) : rightPanelTab === "quantities" ? (
-            <QuantitiesPanel
-              measurements={projectMeasurements}
-              conditions={conditions}
-              sheets={planSheets}
-              loading={false}
-              activeSheetId={activeSheetId}
-              selectedIds={selectedIds}
-              onMeasurementSelect={onQuantitiesMeasurementSelect}
-              onNavigateToMeasurement={onQuantitiesNavigate}
-              onUpdateMeasurement={onQuantitiesPatch}
-              onDeleteMeasurement={onQuantitiesDelete}
-              onReassignCondition={onQuantitiesReassign}
-              canEdit={canEditMeasurements}
-            />
+            <>
+              {/* FUTURE: Linear deductions draw tool — pass onStartDeductionEdit to QuantitiesPanel when re-enabled (roadmap: deferred "Linear deductions (draw tool)"). */}
+              <QuantitiesPanel
+                measurements={projectMeasurements}
+                conditions={conditions}
+                sheets={planSheets}
+                loading={false}
+                activeSheetId={activeSheetId}
+                selectedIds={selectedIds}
+                onMeasurementSelect={onQuantitiesMeasurementSelect}
+                onNavigateToMeasurement={onQuantitiesNavigate}
+                onUpdateMeasurement={onQuantitiesPatch}
+                onDeleteMeasurement={onQuantitiesDelete}
+                onReassignCondition={onQuantitiesReassign}
+                canEdit={canEditMeasurements}
+              />
+            </>
           ) : (
             <ConditionManagerPanel
               projectId={projectId}

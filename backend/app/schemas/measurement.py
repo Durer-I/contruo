@@ -28,6 +28,8 @@ class CreateMeasurementRequest(BaseModel):
     geometry: dict[str, Any]
     label: str | None = Field(default=None, max_length=255)
     override_value: float | None = None
+    #: Linear only: list of ``{"vertices": [{x,y}, ...]}`` polylines subtracted from gross length.
+    deductions: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class UpdateMeasurementRequest(BaseModel):
@@ -35,6 +37,7 @@ class UpdateMeasurementRequest(BaseModel):
     condition_id: uuid.UUID | None = None
     label: str | None = Field(default=None, max_length=255)
     override_value: float | None = None
+    deductions: list[dict[str, Any]] | None = None
 
 
 class DerivedQuantityItem(BaseModel):
@@ -60,6 +63,9 @@ class MeasurementResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     derived_quantities: list[DerivedQuantityItem] = Field(default_factory=list)
+    deductions: list[dict[str, Any]] = Field(default_factory=list)
+    #: Linear: full path length before deductions (same unit as ``measured_value``). Omitted for non-linear.
+    gross_measured_value: float | None = None
 
 
 class MeasurementConditionAggregate(BaseModel):

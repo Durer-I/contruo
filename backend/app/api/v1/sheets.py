@@ -42,4 +42,7 @@ async def patch_sheet_scale(
         height_px=sheet.height_px,
         thumbnail_url=plan_service.sheet_thumbnail_url(sheet),
         created_at=sheet.created_at,
+        vector_snap_segments=sheet.vector_snap_segments
+        if isinstance(getattr(sheet, "vector_snap_segments", None), list)
+        else None,
     )

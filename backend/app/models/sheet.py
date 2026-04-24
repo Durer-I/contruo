@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import String, Text, Integer, Float, DateTime, ForeignKey, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -45,6 +45,8 @@ class Sheet(Base):
     thumbnail_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Cached extracted text layer for search (Sprint 06). Stored as a single blob, not searchable yet.
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Line segments from PDF vector paths for snap-to-geometry (JSON list of {x1,y1,x2,y2} in PDF points).
+    vector_snap_segments: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

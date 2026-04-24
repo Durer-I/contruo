@@ -48,6 +48,8 @@ export interface SheetInfo {
   height_px: number | null;
   thumbnail_url: string | null;
   created_at: string;
+  /** PDF vector segments for snap (from processing); may be undefined for older sheets. */
+  vector_snap_segments?: Array<{ x1: number; y1: number; x2: number; y2: number }> | null;
 }
 
 export interface SearchHit {

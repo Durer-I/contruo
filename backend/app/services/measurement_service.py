@@ -76,6 +76,56 @@ def _geometry_dict_linear(vertices: list[dict[str, Any]]) -> dict[str, Any]:
     return {"type": "linear", "vertices": vertices}
 
 
+def _parse_linear_deductions(raw: Any) -> list[list[dict[str, Any]]]:
+    """Each deduction is an open polyline with at least two vertices (PDF points)."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise AppException(
+            code="INVALID_DEDUCTIONS",
+            message="deductions must be a list",
+            status_code=400,
+        )
+    out: list[list[dict[str, Any]]] = []
+    for i, item in enumerate(raw):
+        verts_raw: Any = None
+        if isinstance(item, dict):
+            verts_raw = item.get("vertices")
+        elif isinstance(item, list):
+            verts_raw = item
+        if not isinstance(verts_raw, list) or len(verts_raw) < 2:
+            raise AppException(
+                code="INVALID_DEDUCTIONS",
+                message=f"deduction[{i}] needs at least two vertices",
+                status_code=400,
+            )
+        verts = _parse_linear_vertices({"type": "linear", "vertices": verts_raw})
+        out.append(verts)
+    return out
+
+
+def _deduction_polylines_stored(polylines: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    return [{"vertices": ring} for ring in polylines]
+
+
+def _stored_deduction_polylines(m: Measurement) -> list[list[dict[str, Any]]]:
+    if m.measurement_type != "linear":
+        return []
+    try:
+        return _parse_linear_deductions(m.deductions)
+    except AppException:
+        return []
+
+
+def _linear_net_pdf_length(vertices: list[dict[str, Any]], deductions: list[list[dict[str, Any]]]) -> float:
+    gross = polyline_length_pdf_points(vertices)
+    deduct = 0.0
+    for ring in deductions:
+        if len(ring) >= 2:
+            deduct += polyline_length_pdf_points(ring)
+    return max(0.0, gross - deduct)
+
+
 def _parse_count_geometry(geometry: dict[str, Any]) -> dict[str, Any]:
     if geometry.get("type") != "count":
         raise AppException(
@@ -225,6 +275,8 @@ def _compute_measured_value(
     geometry: dict[str, Any],
     sheet: Sheet,
     condition: Condition,
+    *,
+    deductions: list[list[dict[str, Any]]] | None = None,
 ) -> float:
     if measurement_type == "linear":
         if condition.measurement_type != "linear":
@@ -234,7 +286,8 @@ def _compute_measured_value(
                 status_code=400,
             )
         verts = _parse_linear_vertices(geometry)
-        pdf_len = polyline_length_pdf_points(verts)
+        ded = deductions if deductions is not None else []
+        pdf_len = _linear_net_pdf_length(verts, ded)
         try:
             return linear_measured_value(pdf_len, sheet, condition)
         except ValueError as e:
@@ -295,8 +348,15 @@ async def _get_measurement(
     return row
 
 
-def _to_response(m: Measurement, derived: list[DerivedQuantityItem] | None = None) -> MeasurementResponse:
+def _to_response(
+    m: Measurement,
+    derived: list[DerivedQuantityItem] | None = None,
+    *,
+    gross_measured_value: float | None = None,
+) -> MeasurementResponse:
     geom = m.geometry if isinstance(m.geometry, dict) else {}
+    ded_raw = m.deductions if isinstance(m.deductions, list) else []
+    ded_out: list[dict[str, Any]] = [x for x in ded_raw if isinstance(x, dict)]
     return MeasurementResponse(
         id=m.id,
         org_id=m.org_id,
@@ -312,6 +372,8 @@ def _to_response(m: Measurement, derived: list[DerivedQuantityItem] | None = Non
         created_at=m.created_at,
         updated_at=m.updated_at,
         derived_quantities=derived if derived is not None else [],
+        deductions=ded_out,
+        gross_measured_value=gross_measured_value,
     )
 
 
@@ -369,11 +431,40 @@ def _derive_for_measurement(
     ]
 
 
+def _linear_gross_measured_for_row(
+    m: Measurement,
+    cd: dict[uuid.UUID, Condition],
+    sd: dict[uuid.UUID, Sheet],
+) -> float | None:
+    if m.measurement_type != "linear":
+        return None
+    c = cd.get(m.condition_id)
+    sh = sd.get(m.sheet_id)
+    if not c or not sh or sh.scale_value is None:
+        return None
+    try:
+        verts = _parse_linear_vertices(m.geometry if isinstance(m.geometry, dict) else {})
+        pdf_len = polyline_length_pdf_points(verts)
+        return linear_measured_value(pdf_len, sh, c)
+    except (AppException, ValueError, KeyError, TypeError):
+        return None
+
+
 async def _responses_with_derived(
     db: AsyncSession, org_id: uuid.UUID, measurements: list[Measurement]
 ) -> list[MeasurementResponse]:
     cd, sd, by_c = await _load_derived_context(db, org_id, measurements)
-    return [_to_response(m, _derive_for_measurement(m, cd, sd, by_c)) for m in measurements]
+    out: list[MeasurementResponse] = []
+    for m in measurements:
+        gross = _linear_gross_measured_for_row(m, cd, sd)
+        out.append(
+            _to_response(
+                m,
+                _derive_for_measurement(m, cd, sd, by_c),
+                gross_measured_value=gross,
+            )
+        )
+    return out
 
 
 async def _aggregates_for_project(
@@ -501,12 +592,23 @@ async def create_measurement(
             status_code=409,
         )
 
+    if body.measurement_type != "linear" and body.deductions:
+        raise AppException(
+            code="INVALID_DEDUCTIONS",
+            message="deductions are only allowed for linear measurements",
+            status_code=400,
+        )
+
     geom = body.geometry if isinstance(body.geometry, dict) else {}
 
+    deduction_polylines: list[list[dict[str, Any]]] = []
     if body.measurement_type == "linear":
         verts = _parse_linear_vertices(geom)
         geom_stored = _geometry_dict_linear(verts)
-        measured = _compute_measured_value("linear", geom_stored, sheet, condition)
+        deduction_polylines = _parse_linear_deductions(body.deductions)
+        measured = _compute_measured_value(
+            "linear", geom_stored, sheet, condition, deductions=deduction_polylines
+        )
     elif body.measurement_type == "area":
         geom_stored = _normalize_area_geometry(geom)
         measured = _compute_measured_value("area", geom_stored, sheet, condition)
@@ -516,6 +618,9 @@ async def create_measurement(
     else:
         raise AppException(code="INVALID_MEASUREMENT_TYPE", message="Unknown measurement type", status_code=400)
 
+    ded_stored: list[dict[str, Any]] = (
+        _deduction_polylines_stored(deduction_polylines) if body.measurement_type == "linear" else []
+    )
     m = Measurement(
         org_id=org_id,
         project_id=project_id,
@@ -525,7 +630,7 @@ async def create_measurement(
         geometry=geom_stored,
         measured_value=measured,
         override_value=body.override_value,
-        deductions=[],
+        deductions=ded_stored,
         label=body.label,
         created_by=user_id,
     )
@@ -589,8 +694,13 @@ async def update_measurement(
                     status_code=400,
                 )
             m.condition_id = nid
+            deds = _stored_deduction_polylines(m)
             m.measured_value = _compute_measured_value(
-                m.measurement_type, m.geometry, sheet, new_condition
+                m.measurement_type,
+                m.geometry,
+                sheet,
+                new_condition,
+                deductions=deds if m.measurement_type == "linear" else None,
             )
             condition = new_condition
 
@@ -606,7 +716,10 @@ async def update_measurement(
         if mt == "linear":
             verts = _parse_linear_vertices(geom)
             m.geometry = _geometry_dict_linear(verts)
-            m.measured_value = _compute_measured_value("linear", m.geometry, sheet, condition)
+            deds = _stored_deduction_polylines(m)
+            m.measured_value = _compute_measured_value(
+                "linear", m.geometry, sheet, condition, deductions=deds
+            )
         elif mt == "area":
             m.geometry = _normalize_area_geometry(geom)
             m.measured_value = _compute_measured_value("area", m.geometry, sheet, condition)
@@ -615,6 +728,19 @@ async def update_measurement(
             m.measured_value = 1.0
         else:
             raise AppException(code="INVALID_MEASUREMENT_TYPE", message="Unknown measurement type", status_code=400)
+
+    if "deductions" in data and data["deductions"] is not None:
+        if m.measurement_type != "linear":
+            raise AppException(
+                code="INVALID_DEDUCTIONS",
+                message="deductions apply only to linear measurements",
+                status_code=400,
+            )
+        polylines = _parse_linear_deductions(data["deductions"])
+        m.deductions = _deduction_polylines_stored(polylines)
+        m.measured_value = _compute_measured_value(
+            "linear", m.geometry, sheet, condition, deductions=polylines
+        )
 
     if "label" in data:
         m.label = data["label"]

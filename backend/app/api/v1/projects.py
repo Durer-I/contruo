@@ -238,6 +238,9 @@ async def list_project_sheets(
                 height_px=s.height_px,
                 thumbnail_url=plan_service.sheet_thumbnail_url(s),
                 created_at=s.created_at,
+                vector_snap_segments=s.vector_snap_segments
+                if isinstance(getattr(s, "vector_snap_segments", None), list)
+                else None,
             )
             for s in sheets
         ]

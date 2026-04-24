@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase";
 import { api } from "@/lib/api";
+import { syncSupabaseSessionCookies } from "@/lib/sync-supabase-session";
 import type { UserInfo, AuthResponse } from "@/types/user";
 
 interface AuthState {
@@ -124,6 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         org_name: orgName,
       });
 
+      await syncSupabaseSessionCookies(data.access_token, data.refresh_token);
       const supabase = getSupabase();
       await supabase.auth.setSession({
         access_token: data.access_token,
@@ -155,6 +157,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email,
         password,
       });
+      await syncSupabaseSessionCookies(data.access_token, data.refresh_token);
       await supabase.auth.setSession({
         access_token: data.access_token,
         refresh_token: data.refresh_token,

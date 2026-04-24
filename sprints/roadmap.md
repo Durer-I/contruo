@@ -190,6 +190,15 @@ These items are **out of scope for the first vertical slice** of a sprint but ar
 - **Bundle B (editing):** vertex handles + PATCH-on-complete + live recalculation → treat as a **mini-milestone** (e.g. Sprint 08b or first week of Sprint 15) because it touches canvas, API, and conflict with pan/select.
 - **Bundle C (history):** generalize undo/redo once linear + area tools share patterns — **Sprint 15** or **post–MVP** if time is tight.
 
+### Linear deductions (draw tool)
+
+**Status:** Backend and types support linear deductions (net length, `deductions` on measurements, gross → net in quantities when data exists). The **quantities “draw deductions” entry point and plan deduction mode** are **commented out** in the frontend until a future iteration (`quantities-panel.tsx` JSX comment block; `plan-viewer-workspace.tsx` `onStartDeductionEdit` prop). Re-enable by uncommenting those blocks and restoring the `Minus` icon import in the quantities panel.
+
+| Item | Notes |
+| ---- | ----- |
+| **UI** | Minus button on linear rows, orange deduction banner, polyline draw + Enter to save segment |
+| **Suggested sprint** | Post–MVP polish sprint or first takeoff-focused release after launch prep |
+
 ### Backlog — other themes (placeholders)
 
 

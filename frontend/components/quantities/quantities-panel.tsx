@@ -43,7 +43,11 @@ import {
 } from "@/lib/quantity-display";
 import { cn } from "@/lib/utils";
 import type { ConditionInfo } from "@/types/condition";
-import type { DerivedQuantityInfo, MeasurementInfo } from "@/types/measurement";
+import type {
+  DerivedQuantityInfo,
+  LinearDeductionPolyline,
+  MeasurementInfo,
+} from "@/types/measurement";
 import type { SheetInfo } from "@/types/project";
 
 type FlatRow =
@@ -102,10 +106,12 @@ export interface QuantitiesPanelProps {
   onNavigateToMeasurement: (m: MeasurementInfo) => void;
   onUpdateMeasurement: (
     id: string,
-    patch: { override_value?: number | null }
+    patch: { override_value?: number | null; deductions?: LinearDeductionPolyline[] }
   ) => Promise<void>;
   onDeleteMeasurement: (id: string) => Promise<void>;
   onReassignCondition: (id: string, conditionId: string) => Promise<void>;
+  /** Start drawing deduction segments for a linear measurement (plan workspace). */
+  onStartDeductionEdit?: (measurementId: string) => void;
   canEdit: boolean;
 }
 
@@ -476,6 +482,14 @@ export function QuantitiesPanel({
                 const hasAsm = (m.derived_quantities?.length ?? 0) > 0;
                 const selected = selectedIds.has(m.id);
                 const overridden = m.override_value != null;
+                const hasDeductions =
+                  m.measurement_type === "linear" &&
+                  Array.isArray(m.deductions) &&
+                  m.deductions.length > 0;
+                const gross =
+                  m.measurement_type === "linear" && m.gross_measured_value != null
+                    ? m.gross_measured_value
+                    : null;
 
                 return (
                   <div
@@ -535,30 +549,74 @@ export function QuantitiesPanel({
                         autoFocus
                       />
                     ) : (
-                      <button
-                        type="button"
-                        className={cn(
-                          "flex shrink-0 items-center gap-0.5 font-mono text-[10px]",
-                          overridden ? "text-amber-200" : "text-muted-foreground"
-                        )}
-                        onClick={(e) => {
-                          onMeasurementSelect(m.id, {
-                            ctrlKey: e.ctrlKey,
-                            metaKey: e.metaKey,
-                          });
-                          if (e.detail === 2) {
-                            e.stopPropagation();
-                            startEdit(m);
-                            return;
-                          }
-                          if (!e.ctrlKey && !e.metaKey) {
-                            void onNavigateToMeasurement(m);
-                          }
-                        }}
-                      >
-                        {overridden ? <PencilLine className="h-3 w-3 shrink-0 opacity-80" /> : null}
-                        {formatEffectiveQuantity(m, c, sh.scale_unit)}
-                      </button>
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        <button
+                          type="button"
+                          className={cn(
+                            "flex shrink-0 items-center gap-0.5 font-mono text-[10px]",
+                            overridden ? "text-amber-200" : "text-muted-foreground"
+                          )}
+                          onClick={(e) => {
+                            onMeasurementSelect(m.id, {
+                              ctrlKey: e.ctrlKey,
+                              metaKey: e.metaKey,
+                            });
+                            if (e.detail === 2) {
+                              e.stopPropagation();
+                              startEdit(m);
+                              return;
+                            }
+                            if (!e.ctrlKey && !e.metaKey) {
+                              void onNavigateToMeasurement(m);
+                            }
+                          }}
+                        >
+                          {overridden ? <PencilLine className="h-3 w-3 shrink-0 opacity-80" /> : null}
+                          {hasDeductions && gross != null ? (
+                            <span className="tabular-nums">
+                              <span className="text-muted-foreground/80">
+                                {formatLength(gross, sh.scale_unit, c.unit)}
+                              </span>
+                              <span className="mx-0.5 text-muted-foreground/60">→</span>
+                              {formatEffectiveQuantity(m, c, sh.scale_unit)}
+                            </span>
+                          ) : (
+                            formatEffectiveQuantity(m, c, sh.scale_unit)
+                          )}
+                        </button>
+                        {/*
+                          FUTURE: Linear deduction draw tool (quantities minus button).
+                          Re-enable by passing onStartDeductionEdit from plan-viewer-workspace and restoring the block below.
+                          See roadmap.md → Deferred & follow-on → "Linear deductions (draw tool)".
+
+                        {canEdit &&
+                        m.measurement_type === "linear" &&
+                        onStartDeductionEdit ? (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  className="inline-flex h-6 w-6 shrink-0 text-orange-300 hover:text-orange-200"
+                                  aria-label="Draw deductions"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onStartDeductionEdit(m.id);
+                                  }}
+                                />
+                              }
+                            >
+                              <Minus className="h-3.5 w-3.5" />
+                            </TooltipTrigger>
+                            <TooltipContent side="left" className="max-w-xs text-[10px]">
+                              Mark deduction runs (door openings) to reduce net length.
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : null}
+                        */}
+                      </div>
                     )}
                     <span className="w-7 shrink-0 text-[9px] text-muted-foreground">{c.unit}</span>
                   </div>

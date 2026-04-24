@@ -45,12 +45,19 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/reset-password") ||
     pathname.startsWith("/accept-invite");
 
+  /** Lets unauthenticated clients persist Supabase cookies after API login. */
+  const isSyncSessionApi = pathname === "/api/auth/sync-session";
+
+  const allowWithoutSession = isAuthRoute || isSyncSessionApi;
+
   // If on a protected route without a session, redirect to login
-  if (!user && !isAuthRoute) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(url);
+  if (!user && !allowWithoutSession) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    const destination = `${pathname}${request.nextUrl.search || ""}`;
+    loginUrl.search = "";
+    loginUrl.searchParams.set("redirect", destination);
+    return NextResponse.redirect(loginUrl);
   }
 
   // If authenticated and on an auth page, redirect to dashboard

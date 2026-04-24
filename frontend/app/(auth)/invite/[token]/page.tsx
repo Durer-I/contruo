@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
+import { syncSupabaseSessionCookies } from "@/lib/sync-supabase-session";
 import type { AuthResponse } from "@/types/user";
 
 export default function AcceptInvitePage() {
@@ -39,6 +40,7 @@ export default function AcceptInvitePage() {
         { full_name: fullName, password }
       );
 
+      await syncSupabaseSessionCookies(data.access_token, data.refresh_token);
       const supabase = createClient();
       await supabase.auth.setSession({
         access_token: data.access_token,
