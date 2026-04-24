@@ -12,6 +12,9 @@ import {
 interface TopBarCenterContextValue {
   center: ReactNode;
   setCenter: (node: ReactNode) => void;
+  /** Optional cluster next to the center toolbar (e.g. live collaboration avatars). */
+  trailing: ReactNode;
+  setTrailing: (node: ReactNode) => void;
 }
 
 const TopBarCenterContext = createContext<TopBarCenterContextValue | null>(
@@ -20,13 +23,17 @@ const TopBarCenterContext = createContext<TopBarCenterContextValue | null>(
 
 export function TopBarCenterProvider({ children }: { children: ReactNode }) {
   const [center, setCenterState] = useState<ReactNode>(null);
+  const [trailing, setTrailingState] = useState<ReactNode>(null);
   const setCenter = useCallback((node: ReactNode) => {
     setCenterState(node);
   }, []);
+  const setTrailing = useCallback((node: ReactNode) => {
+    setTrailingState(node);
+  }, []);
 
   const value = useMemo(
-    () => ({ center, setCenter }),
-    [center, setCenter]
+    () => ({ center, setCenter, trailing, setTrailing }),
+    [center, setCenter, trailing, setTrailing]
   );
 
   return (

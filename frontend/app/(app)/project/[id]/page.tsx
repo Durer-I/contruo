@@ -15,6 +15,7 @@ import {
   ProjectTopBarRegistrar,
 } from "@/components/projects/project-top-bar-center";
 import { PlanViewerWorkspace } from "@/components/plan-viewer/plan-viewer-workspace";
+import { ProjectCollaborationRoom } from "@/components/collaboration/project-collaboration-room";
 
 export default function ProjectPage() {
   const params = useParams<{ id: string }>();
@@ -28,6 +29,7 @@ export default function ProjectPage() {
   const canUpload = hasPermission(role, "upload_plans");
   const canEditMeasurements = hasPermission(role, "edit_measurements");
   const canManageConditions = hasPermission(role, "manage_conditions");
+  const canExport = hasPermission(role, "export_data");
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [plans, setPlans] = useState<PlanInfo[]>([]);
   const [sheets, setSheets] = useState<SheetInfo[]>([]);
@@ -192,19 +194,22 @@ export default function ProjectPage() {
       )}
 
       {hasSheets && resolvedPlanId ? (
-        <PlanViewerWorkspace
-          key={projectId}
-          projectId={projectId}
-          projectName={project.name}
-          plans={plans}
-          activePlanId={resolvedPlanId}
-          onActivePlanChange={selectPlan}
-          sheets={sheets}
-          onSheetsRefresh={refreshSheetsSilently}
-          sheetsRefreshing={sheetsRefreshing}
-          canEditMeasurements={canEditMeasurements}
-          canManageConditions={canManageConditions}
-        />
+        <ProjectCollaborationRoom orgId={project.org_id} projectId={projectId}>
+          <PlanViewerWorkspace
+            key={projectId}
+            projectId={projectId}
+            projectName={project.name}
+            plans={plans}
+            activePlanId={resolvedPlanId}
+            onActivePlanChange={selectPlan}
+            sheets={sheets}
+            onSheetsRefresh={refreshSheetsSilently}
+            sheetsRefreshing={sheetsRefreshing}
+            canEditMeasurements={canEditMeasurements}
+            canManageConditions={canManageConditions}
+            canExport={canExport}
+          />
+        </ProjectCollaborationRoom>
       ) : (
         <div className="flex flex-1 flex-col overflow-auto p-6">
           <div className="mb-4 border-b border-border pb-3">

@@ -11,6 +11,9 @@ from app.models.condition import Condition
 from app.models.assembly_item import AssemblyItem
 from app.models.condition_template import ConditionTemplate
 from app.models.measurement import Measurement
+from app.models.subscription import Subscription
+from app.models.invoice import Invoice
+from app.models.billing_webhook_delivery import BillingWebhookDelivery
 
 __all__ = [
     "Base",
@@ -27,4 +30,7 @@ __all__ = [
     "AssemblyItem",
     "ConditionTemplate",
     "Measurement",
+    "Subscription",
+    "Invoice",
+    "BillingWebhookDelivery",
 ]

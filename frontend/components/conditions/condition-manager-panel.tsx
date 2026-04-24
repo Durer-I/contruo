@@ -35,6 +35,8 @@ interface ConditionManagerPanelProps {
   onConditionsChange: () => Promise<void>;
   /** After assembly CRUD: refresh measurements only (keeps condition form from refetching). */
   onSheetMeasurementsRefresh?: () => void | Promise<void>;
+  /** After project condition mutations (Liveblocks notify peers). */
+  onCollaborationMutation?: () => void;
   canManage: boolean;
 }
 
@@ -117,6 +119,7 @@ export function ConditionManagerPanel({
   onActiveConditionChange,
   onConditionsChange,
   onSheetMeasurementsRefresh,
+  onCollaborationMutation,
   canManage,
 }: ConditionManagerPanelProps) {
   const [creating, setCreating] = useState(false);
@@ -205,6 +208,7 @@ export function ConditionManagerPanel({
         onActiveConditionChange(active.id);
       }
       await onConditionsChange();
+      onCollaborationMutation?.();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Save failed");
     } finally {
@@ -218,6 +222,7 @@ export function ConditionManagerPanel({
     projectId,
     onActiveConditionChange,
     onConditionsChange,
+    onCollaborationMutation,
   ]);
 
   const loadTemplates = useCallback(async () => {
@@ -264,13 +269,14 @@ export function ConditionManagerPanel({
         setImportOpen(false);
         onActiveConditionChange(created.id);
         await onConditionsChange();
+        onCollaborationMutation?.();
       } catch (e) {
         setError(e instanceof ApiError ? e.message : "Import failed");
       } finally {
         setSaving(false);
       }
     },
-    [canManage, projectId, onActiveConditionChange, onConditionsChange]
+    [canManage, projectId, onActiveConditionChange, onConditionsChange, onCollaborationMutation]
   );
 
   const confirmDelete = useCallback(async () => {
@@ -283,12 +289,13 @@ export function ConditionManagerPanel({
       const rest = conditions.filter((c) => c.id !== active.id);
       onActiveConditionChange(rest[0]?.id ?? null);
       await onConditionsChange();
+      onCollaborationMutation?.();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Delete failed");
     } finally {
       setSaving(false);
     }
-  }, [active, canManage, conditions, onActiveConditionChange, onConditionsChange]);
+  }, [active, canManage, conditions, onActiveConditionChange, onConditionsChange, onCollaborationMutation]);
 
   const typeLabel = (t: MeasurementType) =>
     t === "linear" ? "Linear" : t === "area" ? "Area" : "Count";

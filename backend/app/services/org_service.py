@@ -1,26 +1,52 @@
 """Organization management service: settings, members, invitations, guests."""
 
+import logging
 import secrets
 import uuid
-import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from supabase import create_client
 
 from app.config import get_settings
-from app.models.organization import Organization
-from app.models.user import User
-from app.models.invitation import Invitation
-from app.models.guest_project_access import GuestProjectAccess
-from app.services.event_service import log_event
 from app.middleware.error_handler import AppException, NotFoundException
+from app.models.guest_project_access import GuestProjectAccess
+from app.models.invitation import Invitation
+from app.models.organization import Organization
+from app.models.project import Project
+from app.models.user import User
+from app.services import billing_service, email_service
+from app.services.event_service import log_event
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
 INVITATION_EXPIRY_DAYS = 7
+
+
+async def _send_invitation_email_safe(
+    db: AsyncSession,
+    invitation: Invitation,
+    *,
+    guest_project_name: str | None = None,
+) -> None:
+    """Best-effort Resend delivery; failures are logged only."""
+    try:
+        org = await get_org(db, invitation.org_id)
+        inviter = await db.get(User, invitation.invited_by)
+        inviter_name = inviter.full_name if inviter else None
+        await email_service.send_invitation_email(
+            to_email=invitation.email,
+            invite_token=invitation.token,
+            org_name=org.name,
+            role=invitation.role,
+            expires_at=invitation.expires_at,
+            inviter_name=inviter_name,
+            guest_project_name=guest_project_name,
+        )
+    except Exception:
+        logger.exception("Failed to send invitation email to %s", invitation.email)
 
 
 def _supabase_admin():
@@ -145,7 +171,7 @@ async def deactivate_member(
     if member.deactivated_at is not None:
         raise AppException(code="ALREADY_DEACTIVATED", message="Member is already deactivated", status_code=400)
 
-    member.deactivated_at = datetime.now(timezone.utc)
+    member.deactivated_at = datetime.now(UTC)
     await db.flush()
 
     await log_event(
@@ -157,6 +183,12 @@ async def deactivate_member(
         entity_id=member_id,
     )
 
+    if not member.is_guest:
+        try:
+            await billing_service.schedule_remove_seat_at_renewal(db, org_id)
+        except ValueError as e:
+            logger.info("Scheduled seat removal skipped: %s", e)
+
 
 # ── Invitations ──────────────────────────────────────────────────────
 
@@ -166,6 +198,8 @@ async def create_invitation(
     email: str,
     role: str,
     invited_by: uuid.UUID,
+    *,
+    guest_project_name: str | None = None,
 ) -> Invitation:
     existing = await db.execute(
         select(Invitation).where(
@@ -181,6 +215,16 @@ async def create_invitation(
             status_code=409,
         )
 
+    if guest_project_name is None:
+        if not await billing_service.can_invite_billable_member(db, org_id):
+            raise AppException(
+                code="NO_SEATS_AVAILABLE",
+                message=(
+                    "All purchased seats are in use. Add seats in Billing before inviting more members."
+                ),
+                status_code=409,
+            )
+
     token = secrets.token_urlsafe(48)
     invitation = Invitation(
         org_id=org_id,
@@ -189,7 +233,7 @@ async def create_invitation(
         token=token,
         invited_by=invited_by,
         status="pending",
-        expires_at=datetime.now(timezone.utc) + timedelta(days=INVITATION_EXPIRY_DAYS),
+        expires_at=datetime.now(UTC) + timedelta(days=INVITATION_EXPIRY_DAYS),
     )
     db.add(invitation)
     await db.flush()
@@ -202,6 +246,9 @@ async def create_invitation(
         entity_type="invitation",
         entity_id=invitation.id,
         payload={"email": email, "role": role},
+    )
+    await _send_invitation_email_safe(
+        db, invitation, guest_project_name=guest_project_name
     )
     return invitation
 
@@ -263,8 +310,10 @@ async def resend_invitation(
         raise NotFoundException("invitation", str(invitation_id))
 
     invitation.token = secrets.token_urlsafe(48)
-    invitation.expires_at = datetime.now(timezone.utc) + timedelta(days=INVITATION_EXPIRY_DAYS)
+    invitation.expires_at = datetime.now(UTC) + timedelta(days=INVITATION_EXPIRY_DAYS)
     await db.flush()
+
+    await _send_invitation_email_safe(db, invitation, guest_project_name=None)
     return invitation
 
 
@@ -281,7 +330,7 @@ async def accept_invitation(
     if not invitation:
         raise AppException(code="INVALID_INVITATION", message="Invitation not found or already used", status_code=404)
 
-    if invitation.expires_at < datetime.now(timezone.utc):
+    if invitation.expires_at < datetime.now(UTC):
         invitation.status = "expired"
         await db.flush()
         raise AppException(code="INVITATION_EXPIRED", message="This invitation has expired", status_code=410)
@@ -316,7 +365,7 @@ async def accept_invitation(
     db.add(user)
 
     invitation.status = "accepted"
-    invitation.accepted_at = datetime.now(timezone.utc)
+    invitation.accepted_at = datetime.now(UTC)
     await db.flush()
 
     # Sign in to return tokens
@@ -367,7 +416,21 @@ async def invite_guest(
     invited_by: uuid.UUID,
 ) -> Invitation:
     """Invite an external user as a guest to view a specific project."""
-    invitation = await create_invitation(db, org_id, email, "viewer", invited_by)
+    proj_result = await db.execute(
+        select(Project).where(Project.id == project_id, Project.org_id == org_id)
+    )
+    project = proj_result.scalar_one_or_none()
+    if not project:
+        raise NotFoundException("project", str(project_id))
+
+    invitation = await create_invitation(
+        db,
+        org_id,
+        email,
+        "viewer",
+        invited_by,
+        guest_project_name=project.name,
+    )
 
     await log_event(
         db,
@@ -404,7 +467,7 @@ async def revoke_guest_access(
         )
     )
 
-    guest.deactivated_at = datetime.now(timezone.utc)
+    guest.deactivated_at = datetime.now(UTC)
     await db.flush()
 
     await log_event(

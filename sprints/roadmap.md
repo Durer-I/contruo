@@ -65,13 +65,13 @@ Build the quantities panel and export functionality. At the end of this phase, u
 
 ## Phase 5: Collaboration & Billing (Sprints 13-14, 4 weeks)
 
-Add real-time collaboration and monetization. At the end of this phase, multiple users can work on the same plan simultaneously with live cursors, and the billing system handles subscriptions and seat management.
+Add real-time collaboration and monetization. At the end of this phase, multiple users can work on the same plan simultaneously with live cursors, and the billing system handles subscriptions and seat management. **Sprint 13 (partial):** core Liveblocks flow is in app (auth, room, presence, avatars, cursors, measurement/condition sync events, presence-based locks); extended offline UX and comment DB groundwork remain. **Sprint 14 (partial / effectively MVP-complete):** Dodo checkout, webhooks, billing UI, seat proration and invite limits, subscription state guard (read-only / suspended / seat overage), team scheduled-seat warnings, and invoice receipt email to the owner are in place; optional follow-ons are Celery failure digests and explicit failure-notification email (see [sprint-14.md](sprint-14.md)).
 
 
 | Sprint                    | Focus                   | Key Deliverable                                                |
 | ------------------------- | ----------------------- | -------------------------------------------------------------- |
-| [Sprint 13](sprint-13.md) | Real-time collaboration | Liveblocks integration, live cursors, presence, lock-on-select |
-| [Sprint 14](sprint-14.md) | Billing & subscription  | DodoPayments, seat management, proration, invoices             |
+| [Sprint 13](sprint-13.md) | Real-time collaboration | Liveblocks auth + room, presence & avatars, cursors, broadcast sync, lock-on-select *(offline queue / comment schema: follow-on)* |
+| [Sprint 14](sprint-14.md) | Billing & subscription  | Dodo checkout + webhooks, subscriptions/invoices + PDF links, billing dashboard, seat add/remove + proration, invite/seat enforcement, `subscription_guard` + banners, scheduled seat-drop warnings, seat-overage write limits, Resend invoice receipts to owner *(optional: Celery failure calendar, payment-failure email — [sprint-14.md](sprint-14.md))* |
 
 
 ---
@@ -102,12 +102,12 @@ Polish, optimize, and prepare for production launch. At the end of this phase, C
 | Sprint 06 | Complete    | 2026-04-16 | 2026-04-18 | Scale calibration (manual + auto), text search across sheets, takeoff toolbar                                                                                                                                                                     |
 | Sprint 07 | Complete    | 2026-04-18 | 2026-04-18 | Conditions CRUD + RLS, manager panel, toolbar/status bar, measurements FK + cascade delete                                                                                                                                                        |
 | Sprint 08 | Partial     | 2026-04-18 | 2026-04-18 | Linear takeoff core: measurements API, click-to-click draw, styled overlays, persistence, selection/delete, condition aggregates; vertex editing & on-canvas labels deferred — see [Deferred & follow-on features](#deferred--follow-on-features) |
-| Sprint 09 | Partial     | 2026-04-18 | -          | Area poly/rect/ellipse, holes (H), aggregates, count rapid-click + drag PATCH + Ctrl multi-delete; area vertex edit & boolean subtract UI deferred — see [sprint-09.md](sprint-09.md) |
-| Sprint 10 | Partial     | 2026-04-18 | -          | Formula engine (AST), assembly CRUD + RLS, derived quantities on measurements, org templates + import, condition reassignment UI; drag-reorder, formula syntax highlight, autocomplete deferred — see [sprint-10.md](sprint-10.md)              |
-| Sprint 11 | Not Started | -          | -          |                                                                                                                                                                                                                                                   |
-| Sprint 12 | Not Started | -          | -          |                                                                                                                                                                                                                                                   |
-| Sprint 13 | Not Started | -          | -          |                                                                                                                                                                                                                                                   |
-| Sprint 14 | Not Started | -          | -          |                                                                                                                                                                                                                                                   |
+| Sprint 09 | Partial     | 2026-04-18 | -          | Area poly/rect/ellipse, holes (H), aggregates, count rapid-click + drag PATCH + Ctrl multi-delete; area vertex edit & boolean subtract UI deferred — see [sprint-09.md](sprint-09.md)                                                             |
+| Sprint 10 | Partial     | 2026-04-18 | -          | Formula engine (AST), assembly CRUD + RLS, derived quantities on measurements, org templates + import, condition reassignment UI; drag-reorder, formula syntax highlight, autocomplete deferred — see [sprint-10.md](sprint-10.md)                |
+| Sprint 11 | Complete    | 2026-04-20 | 2026-04-20 | Quantities panel: tree, overrides, linking, virtualization (see sprint-11.md)                                                                                                                                                                     |
+| Sprint 12 | Complete    | 2026-04-20 | 2026-04-20 | PDF/Excel export: Celery + Storage, toolbar + Ctrl+E, openpyxl + reportlab (see sprint-12.md)                                                                                                                                                     |
+| Sprint 13 | Partial     | 2026-04-20 | -          | Liveblocks: `POST /api/v1/liveblocks/auth`, room `contruo:{org}:{project}`, presence, top-bar avatars + connection pill, PDF cursors, measurement/condition `broadcastEvent` + refetch, lock-on-select (outline + blocked actions). Deferred: offline queue & banner, canvas “edited by” tooltip, comment tables, full `event_log` audit if gaps — see [sprint-13.md](sprint-13.md) |
+| Sprint 14 | Partial     | 2026-04-20 | -          | Billing: DodoPayments checkout + signed webhooks, `subscriptions`/`invoices`/RLS, billing settings UI, add-seat proration + remove-at-renewal, `NO_SEATS_AVAILABLE`, `enforce_org_subscription_state` (read-only / suspended / seat overage allowlist), `/auth/me` banners + Team scheduled-seat + overage UX, invoice PDF list, Resend receipt email to org owner on new payment. Deferred in sprint file: Celery 1/3/7-day retries, owner email on each payment failure — see [sprint-14.md](sprint-14.md) |
 | Sprint 15 | Not Started | -          | -          |                                                                                                                                                                                                                                                   |
 | Sprint 16 | Not Started | -          | -          |                                                                                                                                                                                                                                                   |
 
@@ -160,7 +160,7 @@ graph TD
 | `features/export-reporting/export-formats.md`     | Sprint 12                          |
 | `features/collaboration/real-time-editing.md`     | Sprint 13                          |
 | `features/platform/subscription-and-billing.md`   | Sprint 14                          |
-| `features/collaboration/comments-and-markup.md`   | Post-MVP (groundwork in Sprint 13) |
+| `features/collaboration/comments-and-markup.md`   | Post-MVP (Sprint 13 groundwork deferred — schema not added yet) |
 | `features/collaboration/activity-log.md`          | Post-MVP (groundwork in Sprint 01) |
 | `features/core/volume-takeoff.md`                 | Post-MVP                           |
 
@@ -200,3 +200,7 @@ These items are **out of scope for the first vertical slice** of a sprint but ar
 | **Post-MVP**     | Volume takeoff, rich activity log, comments              | See [Feature-to-Sprint Mapping](#feature-to-sprint-mapping) Post-MVP rows |
 
 
+
+### Settings — General tab (org logo, name, units)
+
+The **General** settings route (`/settings`) and org fields (logo, name, default units) remain implemented for **future use** (e.g. read-only org branding for all roles, or full edit for admins). In the app shell today, **General tab navigation is commented out** and the sidebar **Settings** link points at **Team** (`/settings/team`) so most users land on team management first. When you re-enable General, uncomment the tab in `frontend/components/layout/settings-subnav.tsx` and point the sidebar back to `/settings` if desired.

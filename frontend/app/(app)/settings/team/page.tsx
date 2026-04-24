@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { canManageBilling, type Role } from "@/lib/permissions";
 import { useAuth } from "@/providers/auth-provider";
-import type { MemberInfo, InvitationInfo } from "@/types/org";
+import type { MemberInfo, InvitationInfo, MemberListApiResponse } from "@/types/org";
 import {
   UserPlus,
   Loader2,
@@ -49,19 +51,37 @@ export default function TeamPage() {
   const [inviteRole, setInviteRole] = useState("estimator");
   const [inviting, setInviting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [seatMeta, setSeatMeta] = useState<{
+    billable_seats_used: number;
+    purchased_seats: number | null;
+    can_invite_billable_member: boolean;
+    scheduled_billed_seats: number | null;
+    scheduled_seat_change_effective_at: string | null;
+  } | null>(null);
 
   const canManageTeam = user?.role === "owner" || user?.role === "admin";
+  const canOpenBilling = user?.role ? canManageBilling(user.role as Role) : false;
+  const canInviteMember = seatMeta?.can_invite_billable_member !== false;
 
   const fetchData = useCallback(async () => {
     try {
       const [memberRes, invRes] = await Promise.all([
-        api.get<{ members: MemberInfo[] }>("/api/v1/org/members"),
+        api.get<MemberListApiResponse>("/api/v1/org/members"),
         canManageTeam
           ? api.get<{ invitations: InvitationInfo[] }>("/api/v1/org/invitations")
           : Promise.resolve({ invitations: [] }),
       ]);
       setMembers(memberRes.members);
       setInvitations(invRes.invitations);
+      setSeatMeta({
+        billable_seats_used: memberRes.billable_seats_used ?? 0,
+        purchased_seats:
+          memberRes.purchased_seats === undefined ? null : memberRes.purchased_seats,
+        can_invite_billable_member: memberRes.can_invite_billable_member !== false,
+        scheduled_billed_seats: memberRes.scheduled_billed_seats ?? null,
+        scheduled_seat_change_effective_at:
+          memberRes.scheduled_seat_change_effective_at ?? null,
+      });
     } catch {
       setError("Failed to load team data");
     } finally {
@@ -72,6 +92,10 @@ export default function TeamPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!canInviteMember) setShowInvite(false);
+  }, [canInviteMember]);
 
   async function handleInvite() {
     if (!inviteEmail) return;
@@ -86,7 +110,11 @@ export default function TeamPage() {
       setShowInvite(false);
       await fetchData();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to send invitation");
+      if (e instanceof ApiError && e.code === "NO_SEATS_AVAILABLE") {
+        setError(e.message);
+      } else {
+        setError(e instanceof Error ? e.message : "Failed to send invitation");
+      }
     } finally {
       setInviting(false);
     }
@@ -142,18 +170,116 @@ export default function TeamPage() {
   const deactivated = members.filter((m) => m.deactivated_at && !m.is_guest);
   const pendingInvitations = invitations.filter((i) => i.status === "pending");
 
+  const scheduledSeatWarning =
+    seatMeta?.scheduled_billed_seats != null &&
+    seatMeta.scheduled_seat_change_effective_at != null
+      ? (() => {
+          const when = new Date(seatMeta.scheduled_seat_change_effective_at).toLocaleString(
+            undefined,
+            { dateStyle: "medium", timeStyle: "short" }
+          );
+          const next = seatMeta.scheduled_billed_seats;
+          const used = seatMeta.billable_seats_used;
+          const tight = used > next;
+          return {
+            when,
+            next,
+            tight,
+            used,
+          };
+        })()
+      : null;
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-6">
       <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <h1 className="text-xl font-semibold">Team Members</h1>
         {canManageTeam && (
-          <Button size="sm" onClick={() => setShowInvite(!showInvite)}>
-            <UserPlus className="mr-2 h-4 w-4" />
-            Invite Member
-          </Button>
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            <Button
+              size="sm"
+              disabled={!canInviteMember}
+              onClick={() => setShowInvite(!showInvite)}
+            >
+              <UserPlus className="mr-2 h-4 w-4" />
+              Invite member
+            </Button>
+            {!canInviteMember && seatMeta?.purchased_seats != null ? (
+              <p className="max-w-sm text-right text-xs text-muted-foreground sm:text-right">
+                Every purchased seat has an active member.{" "}
+                {canOpenBilling ? (
+                  <>
+                    <Link href="/settings/billing" className="text-primary underline-offset-4 hover:underline">
+                      Add seats in Billing
+                    </Link>{" "}
+                    to invite more people.
+                  </>
+                ) : (
+                  "Ask an organization owner to add seats in Billing to invite more people."
+                )}
+              </p>
+            ) : null}
+            {!canInviteMember && seatMeta?.purchased_seats == null ? (
+              <p className="max-w-sm text-right text-xs text-muted-foreground sm:text-right">
+                Invites need an active subscription.{" "}
+                {canOpenBilling ? (
+                  <Link href="/settings/billing" className="text-primary underline-offset-4 hover:underline">
+                    Open Billing
+                  </Link>
+                ) : (
+                  "Ask an owner to check Billing."
+                )}
+              </p>
+            ) : null}
+          </div>
         )}
       </div>
+
+      {scheduledSeatWarning && (
+        <div
+          className={cn(
+            "mb-4 rounded-md border px-3 py-2 text-sm",
+            scheduledSeatWarning.tight
+              ? "border-amber-500/50 bg-amber-500/15 text-amber-950 dark:text-amber-50"
+              : "border-border bg-muted/40 text-muted-foreground"
+          )}
+          role="status"
+        >
+          {scheduledSeatWarning.tight ? (
+            <>
+              After <span className="font-medium">{scheduledSeatWarning.when}</span> your
+              plan drops to <span className="font-medium">{scheduledSeatWarning.next}</span>{" "}
+              purchased seats, but you have{" "}
+              <span className="font-medium">{scheduledSeatWarning.used}</span> active
+              members. Deactivate members in Team or{" "}
+              {canOpenBilling ? (
+                <Link href="/settings/billing" className="text-primary underline-offset-4 hover:underline">
+                  add seats in Billing
+                </Link>
+              ) : (
+                "ask an owner to add seats in Billing"
+              )}{" "}
+              before renewal.
+            </>
+          ) : (
+            <>
+              A seat change is scheduled for{" "}
+              <span className="font-medium">{scheduledSeatWarning.when}</span>: purchased seats
+              will be <span className="font-medium">{scheduledSeatWarning.next}</span> after
+              renewal. Ensure headcount fits, or{" "}
+              {canOpenBilling ? (
+                <Link href="/settings/billing" className="text-primary underline-offset-4 hover:underline">
+                  adjust seats in Billing
+                </Link>
+              ) : (
+                "ask an owner to adjust seats in Billing"
+              )}
+              .
+            </>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">

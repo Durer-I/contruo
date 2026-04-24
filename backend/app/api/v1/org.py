@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db
 from app.middleware.auth import AuthContext
 from app.services.permission_service import Permission, require_permission
-from app.services import org_service
+from app.services import billing_service, org_service
 from app.schemas.org import (
     UpdateOrgRequest,
     OrgResponse,
@@ -96,8 +96,25 @@ async def list_members(
     auth: AuthContext = Depends(require_permission(Permission.VIEW_PLANS)),
     db: AsyncSession = Depends(get_db),
 ):
+    await billing_service.refresh_subscription_automatic_transitions(db, auth.org_id)
     members = await org_service.list_members(db, auth.org_id)
-    return {"members": members}
+    used = await billing_service.count_billable_seats_used(db, auth.org_id)
+    sub = await billing_service.get_subscription(db, auth.org_id)
+    can_inv = await billing_service.can_invite_billable_member(db, auth.org_id)
+    purchased: int | None = None
+    if sub is not None and sub.status not in ("cancelled", "suspended"):
+        purchased = int(sub.seat_count)
+    sched = await billing_service.scheduled_seat_change_for_org(
+        db, auth.org_id, skip_refresh=True
+    )
+    return {
+        "members": members,
+        "billable_seats_used": used,
+        "purchased_seats": purchased,
+        "can_invite_billable_member": can_inv,
+        "scheduled_billed_seats": sched.get("scheduled_billed_seats"),
+        "scheduled_seat_change_effective_at": sched.get("scheduled_seat_change_effective_at"),
+    }
 
 
 @router.patch("/members/{member_id}", response_model=MemberResponse)

@@ -24,7 +24,7 @@ function getInitials(name: string): string {
 
 export function TopBar() {
   const { user, signOut } = useAuth();
-  const { center } = useTopBarCenter();
+  const { center, trailing } = useTopBarCenter();
 
   return (
     <header className="flex h-12 shrink-0 items-center border-b border-border bg-surface px-4">
@@ -51,8 +51,13 @@ export function TopBar() {
         </Link>
       </div>
 
-      {/* Center: Contextual toolbar (populated by plan viewer routes) */}
-      <div className="flex min-w-0 flex-1 justify-center px-2">{center}</div>
+      {/* Center: Contextual toolbar + optional trailing (e.g. collaboration) */}
+      <div className="flex min-w-0 flex-1 items-center justify-center gap-3 px-2">
+        {center}
+        {trailing ? <div className="shrink-0">{trailing}</div> : null}
+        {/* Liveblocks collaboration UI is portaled here from under RoomProvider (see CollaborationTopBarRegistrar). */}
+        <div id="contruo-collab-topbar-mount" className="shrink-0" />
+      </div>
 
       {/* Right: Org name + User menu */}
       <div className="flex items-center gap-3">

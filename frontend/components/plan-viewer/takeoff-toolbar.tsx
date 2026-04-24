@@ -2,6 +2,7 @@
 
 import {
   ChevronDown,
+  Download,
   MousePointer2,
   Ruler,
   Square,
@@ -47,6 +48,9 @@ interface TakeoffToolbarProps {
   activeConditionId?: string | null;
   onConditionChange?: (id: string | null) => void;
   conditionPickerDisabled?: boolean;
+  /** Quantities export (Sprint 12). */
+  onExportClick?: () => void;
+  canExport?: boolean;
 }
 
 export function TakeoffToolbar({
@@ -58,6 +62,8 @@ export function TakeoffToolbar({
   activeConditionId = null,
   onConditionChange,
   conditionPickerDisabled,
+  onExportClick,
+  canExport = false,
 }: TakeoffToolbarProps) {
   const tools = canCalibrateScale ? TOOLS : TOOLS.filter((t) => t.id !== "scale");
   const activeCond =
@@ -174,14 +180,29 @@ export function TakeoffToolbar({
         title="Search"
         aria-label="Search"
         onClick={onSearchClick}
-        className="ml-1 shrink-0 rounded-2xl  px-2 py-1 text-xs text-muted-foreground hover:bg-surface-overlay hover:text-foreground flex items-center gap-1"
+        className="ml-1 flex shrink-0 items-center gap-1 rounded-2xl px-2 py-1 text-xs text-muted-foreground hover:bg-surface-overlay hover:text-foreground"
       >
         <Search className="h-3.5 w-3.5" aria-hidden />
         <span className="hidden lg:inline">Find</span>
         <kbd className="hidden rounded bg-background/50 px-1 font-mono text-[10px] opacity-80 sm:inline">
-            Ctrl+F
-          </kbd>
+          Ctrl+F
+        </kbd>
       </button>
+      )}
+      {canExport && onExportClick && (
+        <button
+          type="button"
+          title="Export quantities"
+          aria-label="Export quantities"
+          onClick={onExportClick}
+          className="ml-1 flex shrink-0 items-center gap-1 rounded-2xl px-2 py-1 text-xs text-muted-foreground hover:bg-surface-overlay hover:text-foreground"
+        >
+          <Download className="h-3.5 w-3.5" aria-hidden />
+          <span className="hidden lg:inline">Export</span>
+          <kbd className="hidden rounded bg-background/50 px-1 font-mono text-[10px] opacity-80 sm:inline">
+            Ctrl+E
+          </kbd>
+        </button>
       )}
     </div>
   );

@@ -11,7 +11,7 @@ import {
 } from "@/lib/permissions";
 
 const tabs: { href: string; label: string; perm?: "team" | "billing" }[] = [
-  { href: "/settings", label: "General" },
+  // { href: "/settings", label: "General" },
   { href: "/settings/team", label: "Team", perm: "team" },
   { href: "/settings/account", label: "Account" },
   { href: "/settings/billing", label: "Billing", perm: "billing" },

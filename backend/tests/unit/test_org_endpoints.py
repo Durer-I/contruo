@@ -34,6 +34,14 @@ def _mock_db():
     db = AsyncMock()
     db.__aenter__ = AsyncMock(return_value=db)
     db.__aexit__ = AsyncMock(return_value=False)
+
+    async def _exec(*args, **kwargs):
+        r = MagicMock()
+        r.scalar_one_or_none = MagicMock(return_value=None)
+        r.scalar_one = MagicMock(return_value=0)
+        return r
+
+    db.execute = AsyncMock(side_effect=_exec)
     return db
 
 
@@ -112,12 +120,20 @@ async def test_list_members(owner_ctx):
         }
     ]
 
-    with patch("app.services.org_service.list_members", new_callable=AsyncMock, return_value=members):
+    with (
+        patch("app.services.org_service.list_members", new_callable=AsyncMock, return_value=members),
+        patch("app.api.v1.org.billing_service.get_subscription", new_callable=AsyncMock, return_value=None),
+        patch("app.api.v1.org.billing_service.count_billable_seats_used", new_callable=AsyncMock, return_value=1),
+        patch("app.api.v1.org.billing_service.can_invite_billable_member", new_callable=AsyncMock, return_value=True),
+    ):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             r = await ac.get("/api/v1/org/members")
             assert r.status_code == 200
-            assert len(r.json()["members"]) == 1
+            body = r.json()
+            assert len(body["members"]) == 1
+            assert body["can_invite_billable_member"] is True
+            assert body["billable_seats_used"] == 1
 
 
 @pytest.mark.anyio

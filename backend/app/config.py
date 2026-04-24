@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     # DodoPayments
     dodopayments_api_key: str = ""
     dodopayments_webhook_secret: str = ""
+    #: `test_mode` or `live_mode` per DodoPayments SDK
+    dodopayments_environment: str = "test_mode"
+    #: Annual subscription product id from DodoPayments dashboard (checkout + plan changes).
+    dodopayments_subscription_product_id: str = ""
+    #: When set, pure per-seat: base `quantity` 1 + Seat add-on `quantity` = paid seats (min 1 at checkout).
+    dodopayments_seat_addon_id: str = ""
 
     # Redis / Celery
     # redis_url: str = "redis://localhost:6379/0"

@@ -7,6 +7,7 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { configurePdfWorker } from "@/lib/pdf-worker";
 import {
@@ -50,6 +51,14 @@ export interface PdfPoint {
   y: number;
 }
 
+/** PDF user-space axis-aligned bounds (same coordinates as geometry / pdf.js). */
+export interface PdfFocusBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
 export interface PlanPdfCanvasHandle {
   fitWidth: () => void;
   fitPage: () => void;
@@ -59,6 +68,11 @@ export interface PlanPdfCanvasHandle {
   pdfPointsDistance: (a: PdfPoint, b: PdfPoint) => number;
   /** Map PDF user-space point to viewport pixels (same space as canvas/CSS overlay). */
   pdfToViewportPixel: (p: PdfPoint) => { x: number; y: number } | null;
+  /**
+   * Pan (and optionally zoom) so the given PDF-space rectangle is visible and roughly centered.
+   * Used when navigating from the quantities panel to a measurement.
+   */
+  focusPdfRect: (bounds: PdfFocusBounds) => void;
 }
 
 export type LineStyleDash = "solid" | "dashed" | "dotted";
@@ -71,6 +85,8 @@ export interface LinearOverlayPolyline {
   dash: LineStyleDash;
   /** Thicker stroke when measurement is selected (select tool). */
   emphasize?: boolean;
+  /** Another user is editing this measurement (collaboration lock). */
+  remoteLockColor?: string;
 }
 
 export interface LinearTakeoffHandlers {
@@ -90,6 +106,7 @@ export interface AreaOverlaySaved {
   fillPattern: "solid" | "hatch" | "crosshatch";
   label?: string;
   emphasize?: boolean;
+  remoteLockColor?: string;
 }
 
 export interface CountMarkerOverlay {
@@ -102,6 +119,7 @@ export interface CountMarkerOverlay {
   /** True while POST is in flight — shown immediately on click. */
   pending?: boolean;
   onPointerDown?: (e: React.PointerEvent<SVGCircleElement>) => void;
+  remoteLockColor?: string;
 }
 
 function dashPattern(d: LineStyleDash): string | undefined {
@@ -186,6 +204,14 @@ interface PlanPdfCanvasProps {
   } | null;
   /** Count markers (viewport draws on top). */
   countOverlay?: CountMarkerOverlay[] | null;
+  /** Live collaboration: report pointer position in PDF space for remote cursors. */
+  onPdfPointerMoveForPresence?: (pt: PdfPoint | null) => void;
+  /** Optional layer rendered above measurements in PDF viewport space. */
+  presenceCursors?: (ctx: {
+    vp: PageViewport;
+    cssW: number;
+    cssH: number;
+  }) => ReactNode;
 }
 
 export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>(
@@ -209,6 +235,8 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
       countTakeoff = null,
       areaOverlay = null,
       countOverlay = null,
+      onPdfPointerMoveForPresence,
+      presenceCursors = undefined,
     },
     ref
   ) {
@@ -489,6 +517,84 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
       [pageNumber]
     );
 
+    const focusPdfRect = useCallback((bounds: PdfFocusBounds) => {
+      void (async () => {
+        const pdf = pdfRef.current;
+        const container = containerRef.current;
+        if (!pdf || !container) return;
+
+        const page = await pdf.getPage(pageNumber);
+        const base = page.getViewport({ scale: 1 });
+        const cw = container.clientWidth;
+        const ch = container.clientHeight;
+        if (cw < 8 || ch < 8) return;
+
+        let minX = Math.min(bounds.minX, bounds.maxX);
+        let maxX = Math.max(bounds.minX, bounds.maxX);
+        let minY = Math.min(bounds.minY, bounds.maxY);
+        let maxY = Math.max(bounds.minY, bounds.maxY);
+        if (maxX - minX < 4) {
+          const pad = 20;
+          const cx = (minX + maxX) / 2;
+          const cy = (minY + maxY) / 2;
+          minX = cx - pad;
+          maxX = cx + pad;
+          minY = cy - pad;
+          maxY = cy + pad;
+        }
+
+        const s0 = liveRef.current;
+        const fs = computeFitScale(s0.fitMode, cw, ch, base.width, base.height);
+        let zoomMult = s0.zoomMultiplier;
+
+        const measurePixelSize = (zm: number) => {
+          const vp = page.getViewport({ scale: fs * zm });
+          const corners: Array<[number, number]> = [
+            [minX, minY],
+            [maxX, minY],
+            [maxX, maxY],
+            [minX, maxY],
+          ];
+          let pMinX = Infinity;
+          let pMinY = Infinity;
+          let pMaxX = -Infinity;
+          let pMaxY = -Infinity;
+          for (const [px, py] of corners) {
+            const [vx, vy] = vp.convertToViewportPoint(px, py);
+            pMinX = Math.min(pMinX, vx);
+            pMinY = Math.min(pMinY, vy);
+            pMaxX = Math.max(pMaxX, vx);
+            pMaxY = Math.max(pMaxY, vy);
+          }
+          return { bw: pMaxX - pMinX, bh: pMaxY - pMinY };
+        };
+
+        const pad = 56;
+        let { bw, bh } = measurePixelSize(zoomMult);
+        const maxW = Math.max(80, cw - pad);
+        const maxH = Math.max(80, ch - pad);
+
+        if (bw > maxW || bh > maxH) {
+          const scaleDown = Math.min(maxW / Math.max(bw, 1), maxH / Math.max(bh, 1), 1);
+          zoomMult = clampZoomMult(zoomMult * scaleDown);
+        } else if (bw < 100 && bh < 100) {
+          const factor = Math.min(
+            160 / Math.max(bw, 1),
+            160 / Math.max(bh, 1),
+            2.5
+          );
+          zoomMult = clampZoomMult(zoomMult * factor);
+        }
+
+        const vp = page.getViewport({ scale: fs * zoomMult });
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        const [vx, vy] = vp.convertToViewportPoint(cx, cy);
+        setZoomMultiplier(zoomMult);
+        setPan({ x: cw / 2 - vx, y: ch / 2 - vy });
+      })();
+    }, [pageNumber]);
+
     useImperativeHandle(
       ref,
       () => ({
@@ -545,8 +651,9 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
           const [vx, vy] = vp.convertToViewportPoint(p.x, p.y);
           return { x: vx, y: vy };
         },
+        focusPdfRect,
       }),
-      [pageNumber, runWheelZoom, clientToPdfPoint]
+      [pageNumber, runWheelZoom, clientToPdfPoint, focusPdfRect]
     );
 
     const onWheel = useCallback(
@@ -641,6 +748,9 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
     };
 
     const onPointerMove = (e: React.PointerEvent) => {
+      if (onPdfPointerMoveForPresence) {
+        onPdfPointerMoveForPresence(clientToPdfPoint(e.clientX, e.clientY));
+      }
       if (areaPolygonTakeoff?.active) {
         const pt = clientToPdfPoint(e.clientX, e.clientY);
         areaPolygonTakeoff.onHoverPdf(pt);
@@ -810,6 +920,16 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
                     : ar.fillOpacity * 0.28;
                 return (
                   <g key={ar.id}>
+                    {ar.remoteLockColor ? (
+                      <path
+                        d={d}
+                        fill="none"
+                        stroke={ar.remoteLockColor}
+                        strokeWidth={(ar.emphasize ? ar.lineWidth + 2 : ar.lineWidth) + 6}
+                        strokeOpacity={0.45}
+                        fillRule="evenodd"
+                      />
+                    ) : null}
                     <path
                       d={d}
                       fill={ar.color}
@@ -907,18 +1027,32 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
                   .join(" ");
                 const dash = dashPattern(pl.dash);
                 return (
-                  <polyline
-                    key={pl.id}
-                    fill="none"
-                    stroke={pl.color}
-                    strokeWidth={pl.emphasize ? pl.lineWidth + 2 : pl.lineWidth}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeOpacity={0.92}
-                    strokeDasharray={dash}
-                    points={pts}
-                    style={{ pointerEvents: "none" }}
-                  />
+                  <g key={pl.id}>
+                    {pl.remoteLockColor ? (
+                      <polyline
+                        fill="none"
+                        stroke={pl.remoteLockColor}
+                        strokeWidth={(pl.emphasize ? pl.lineWidth + 2 : pl.lineWidth) + 6}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeOpacity={0.4}
+                        strokeDasharray={dash}
+                        points={pts}
+                        style={{ pointerEvents: "none" }}
+                      />
+                    ) : null}
+                    <polyline
+                      fill="none"
+                      stroke={pl.color}
+                      strokeWidth={pl.emphasize ? pl.lineWidth + 2 : pl.lineWidth}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeOpacity={0.92}
+                      strokeDasharray={dash}
+                      points={pts}
+                      style={{ pointerEvents: "none" }}
+                    />
+                  </g>
                 );
               })}
               {linearOverlay.draft && linearOverlay.draft.vertices.length > 0
@@ -1003,24 +1137,44 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
               {countOverlay.map((m) => {
                 const [vx, vy] = vp.convertToViewportPoint(m.x, m.y);
                 return (
-                  <circle
-                    key={m.id}
-                    cx={vx}
-                    cy={vy}
-                    r={m.emphasize ? 10 : 8}
-                    fill={m.color}
-                    fillOpacity={m.pending ? 0.72 : 0.92}
-                    stroke="hsl(var(--background))"
-                    strokeWidth={m.emphasize ? 2.5 : 1.5}
-                    strokeDasharray={m.pending ? "4 3" : undefined}
-                    className={m.onPointerDown ? "cursor-grab active:cursor-grabbing" : undefined}
-                    style={{ pointerEvents: m.onPointerDown ? "auto" : "none" }}
-                    onPointerDown={m.onPointerDown}
-                  />
+                  <g key={m.id}>
+                    {m.remoteLockColor ? (
+                      <circle
+                        cx={vx}
+                        cy={vy}
+                        r={m.emphasize ? 14 : 12}
+                        fill="none"
+                        stroke={m.remoteLockColor}
+                        strokeWidth={3}
+                        strokeOpacity={0.55}
+                        style={{ pointerEvents: "none" }}
+                      />
+                    ) : null}
+                    <circle
+                      cx={vx}
+                      cy={vy}
+                      r={m.emphasize ? 10 : 8}
+                      fill={m.color}
+                      fillOpacity={m.pending ? 0.72 : 0.92}
+                      stroke="hsl(var(--background))"
+                      strokeWidth={m.emphasize ? 2.5 : 1.5}
+                      strokeDasharray={m.pending ? "4 3" : undefined}
+                      className={m.onPointerDown ? "cursor-grab active:cursor-grabbing" : undefined}
+                      style={{ pointerEvents: m.onPointerDown ? "auto" : "none" }}
+                      onPointerDown={m.onPointerDown}
+                    />
+                  </g>
                 );
               })}
             </svg>
           ) : null}
+          {vp && pageCssSize.w > 0 && presenceCursors
+            ? presenceCursors({
+                vp,
+                cssW: pageCssSize.w,
+                cssH: pageCssSize.h,
+              })
+            : null}
         </div>
       </div>
     );

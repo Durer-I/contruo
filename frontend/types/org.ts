@@ -24,3 +24,13 @@ export interface InvitationInfo {
   expires_at: string;
   created_at: string;
 }
+
+/** GET /api/v1/org/members */
+export interface MemberListApiResponse {
+  members: MemberInfo[];
+  billable_seats_used?: number;
+  purchased_seats?: number | null;
+  can_invite_billable_member?: boolean;
+  scheduled_billed_seats?: number | null;
+  scheduled_seat_change_effective_at?: string | null;
+}

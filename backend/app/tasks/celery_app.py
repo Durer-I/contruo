@@ -7,7 +7,7 @@ celery_app = Celery(
     "contruo",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.tasks.test_task", "app.tasks.pdf_processing"],
+    include=["app.tasks.test_task", "app.tasks.pdf_processing", "app.tasks.export_generation"],
 )
 
 celery_app.conf.update(

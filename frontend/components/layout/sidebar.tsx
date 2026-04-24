@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -28,14 +28,31 @@ const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { id: "projects", label: "Projects", href: "/projects", icon: FolderOpen },
   { id: "templates", label: "Templates", href: "/templates", icon: Library },
-  { id: "settings", label: "Settings", href: "/settings", icon: Settings, requirePerm: "manage_org_settings" as const },
+  { id: "settings", label: "Settings", href: "/settings/team", icon: Settings, requirePerm: "manage_org_settings" as const },
   { id: "billing", label: "Billing", href: "/settings/billing", icon: CreditCard, requirePerm: "manage_billing" as const },
 ];
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const prevPathRef = useRef<string | null>(null);
   const { user } = useAuth();
+
+  /**
+   * Project workspace: auto-collapse the sidebar for canvas space.
+   * Leaving `/project/...` for dashboard, settings, etc.: auto-expand again.
+   */
+  useEffect(() => {
+    const prev = prevPathRef.current;
+    const wasProject = prev?.startsWith("/project/") ?? false;
+    const isProject = pathname.startsWith("/project/");
+    if (isProject && !wasProject) {
+      setCollapsed(true);
+    } else if (!isProject && wasProject) {
+      setCollapsed(false);
+    }
+    prevPathRef.current = pathname;
+  }, [pathname]);
   const role = (user?.role ?? "viewer") as Role;
 
   const visibleItems = NAV_ITEMS.filter((item) => {

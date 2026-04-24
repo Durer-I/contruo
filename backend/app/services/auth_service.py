@@ -1,15 +1,17 @@
-import uuid
+import asyncio
 import logging
+import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from supabase import create_client
 
 from app.config import get_settings
+from app.middleware.error_handler import AppException
 from app.models.organization import Organization
 from app.models.user import User
+from app.services import billing_service
 from app.services.event_service import log_event
-from app.middleware.error_handler import AppException
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -114,18 +116,28 @@ async def register_user(
             status_code=201,
         )
 
+    sub_status = await billing_service.get_org_subscription_status(db, org.id)
+    has_sub = await billing_service.get_subscription(db, org.id)
+    banner = await billing_service.billing_banner_message(db, org.id)
+    seat_overage = await billing_service.org_seat_capacity_overage(db, org.id)
+    user_payload = {
+        "id": user.id,
+        "email": email,
+        "full_name": user.full_name,
+        "org_id": org.id,
+        "org_name": org.name,
+        "role": user.role,
+        "is_guest": user.is_guest,
+        "subscription_status": sub_status,
+        "needs_subscription": has_sub is None,
+        "reactivation_required": billing_service.subscription_requires_resubscribe(has_sub),
+        "billing_banner": banner,
+        "seat_overage": seat_overage,
+    }
     return {
         "access_token": sign_in.session.access_token,
         "refresh_token": sign_in.session.refresh_token,
-        "user": {
-            "id": user.id,
-            "email": email,
-            "full_name": user.full_name,
-            "org_id": org.id,
-            "org_name": org.name,
-            "role": user.role,
-            "is_guest": user.is_guest,
-        },
+        "user": user_payload,
     }
 
 
@@ -179,6 +191,10 @@ async def get_user_with_org(
             status_code=404,
         )
     user, org = row
+    sub_status = await billing_service.get_org_subscription_status(db, org.id)
+    has_sub = await billing_service.get_subscription(db, org.id)
+    banner = await billing_service.billing_banner_message(db, org.id)
+    seat_overage = await billing_service.org_seat_capacity_overage(db, org.id)
     return {
         "id": user.id,
         "email": "",  # filled by caller from JWT
@@ -187,7 +203,40 @@ async def get_user_with_org(
         "org_name": org.name,
         "role": user.role,
         "is_guest": user.is_guest,
+        "subscription_status": sub_status,
+        "needs_subscription": has_sub is None,
+        "reactivation_required": billing_service.subscription_requires_resubscribe(has_sub),
+        "billing_banner": banner,
+        "seat_overage": seat_overage,
     }
+
+
+async def get_org_owner_auth_email(db: AsyncSession, org_id: uuid.UUID) -> str | None:
+    """Supabase Auth email for the active org owner (for billing notifications)."""
+    result = await db.execute(
+        select(User.id).where(
+            User.org_id == org_id,
+            User.role == "owner",
+            User.deactivated_at.is_(None),
+        )
+    )
+    owner_id = result.scalar_one_or_none()
+    if not owner_id:
+        return None
+
+    supabase = _get_supabase_admin()
+
+    def _fetch() -> str | None:
+        try:
+            resp = supabase.auth.admin.get_user_by_id(str(owner_id))
+            u = getattr(resp, "user", None)
+            raw = (getattr(u, "email", None) or "").strip()
+            return raw or None
+        except Exception as e:
+            logger.warning("Could not load auth email for owner %s: %s", owner_id, e)
+            return None
+
+    return await asyncio.to_thread(_fetch)
 
 
 async def update_profile(

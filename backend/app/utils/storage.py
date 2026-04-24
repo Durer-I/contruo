@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 #: Buckets required by the app. Ensured lazily on first access in development.
 PLANS_BUCKET = "plans"
 THUMBNAILS_BUCKET = "plan-thumbnails"
+#: Generated export files (xlsx/pdf); private bucket, short-lived objects.
+EXPORTS_BUCKET = "exports"
 
 #: Default signed URL lifetime for plan/thumbnail access. 1 hour is a reasonable balance:
 #: long enough that polling clients don't need to re-request often, short enough that a leaked

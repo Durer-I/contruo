@@ -40,6 +40,11 @@ class UserInfo(BaseModel):
     org_name: str
     role: str
     is_guest: bool
+    subscription_status: str | None = None
+    needs_subscription: bool | None = None
+    reactivation_required: bool = False
+    billing_banner: str | None = None
+    seat_overage: bool = False
 
 
 class MeResponse(BaseModel):

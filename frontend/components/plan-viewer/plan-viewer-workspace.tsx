@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useBroadcastEvent, useEventListener } from "@liveblocks/react";
 import {
   Group,
   Panel,
@@ -26,9 +27,17 @@ import type {
   SheetInfo,
 } from "@/types/project";
 import { useTakeoffToolbarSlot } from "@/providers/takeoff-toolbar-slot-provider";
-import { useStatusBarSlot } from "@/providers/status-bar-slot-provider";
+import { useAuth } from "@/providers/auth-provider";
+import { useSetCollaborationPdfCursor } from "@/providers/collaboration-cursor-context";
+import { CollaborationRoomShell } from "@/components/collaboration/collaboration-room-shell";
+import { CollaborationCursorsLayer } from "@/components/collaboration/collaboration-cursors";
+import { useRemoteMeasurementLockMap } from "@/hooks/use-remote-measurement-locks";
+import type { CollaborationBroadcastEvent } from "@/lib/collaboration-events";
 import { useConditions } from "@/hooks/use-conditions";
 import { ConditionManagerPanel } from "@/components/conditions/condition-manager-panel";
+import { ExportDialog } from "@/components/export/export-dialog";
+import { QuantitiesPanel } from "@/components/quantities/quantities-panel";
+import { getMeasurementPdfBounds } from "@/lib/measurement-bounds";
 
 import {
   PlanPdfCanvas,
@@ -75,6 +84,7 @@ interface PlanViewerWorkspaceProps {
   sheetsRefreshing?: boolean;
   canEditMeasurements: boolean;
   canManageConditions: boolean;
+  canExport?: boolean;
 }
 
 const PANEL_IDS = ["sheet-index", "viewer", "quantities"] as const;
@@ -92,11 +102,11 @@ export function PlanViewerWorkspace({
   sheetsRefreshing = false,
   canEditMeasurements,
   canManageConditions,
+  canExport = false,
 }: PlanViewerWorkspaceProps) {
   const canvasRef = useRef<PlanPdfCanvasHandle>(null);
   const skipSheetResetOnPlanChangeRef = useRef(false);
   const { setTakeoffSlot } = useTakeoffToolbarSlot();
-  const { setStatusBarSlot } = useStatusBarSlot();
   const {
     conditions,
     loading: conditionsLoading,
@@ -183,14 +193,17 @@ export function PlanViewerWorkspace({
   const [sheetMeasurements, setSheetMeasurements] = useState<MeasurementInfo[]>([]);
   const [linearDraft, setLinearDraft] = useState<PdfPoint[]>([]);
   const [linearHoverPdf, setLinearHoverPdf] = useState<PdfPoint | null>(null);
-  const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [measurementUndoStack, setMeasurementUndoStack] = useState<string[]>([]);
+  const [projectMeasurements, setProjectMeasurements] = useState<MeasurementInfo[]>([]);
+  const [rightPanelTab, setRightPanelTab] = useState<"quantities" | "conditions">("quantities");
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [measurementAggregates, setMeasurementAggregates] =
     useState<MeasurementAggregatesResponse | null>(null);
 
   const [areaRing, setAreaRing] = useState<PdfPoint[]>([]);
   const [areaHoverPdf, setAreaHoverPdf] = useState<PdfPoint | null>(null);
-  const [selectedCountIds, setSelectedCountIds] = useState<Set<string>>(() => new Set());
   const [countDragPreview, setCountDragPreview] = useState<{
     id: string;
     x: number;
@@ -201,7 +214,19 @@ export function PlanViewerWorkspace({
     { tempId: string; x: number; y: number }[]
   >([]);
 
+  const loadProjectMeasurements = useCallback(async () => {
+    try {
+      const r = await api.get<{ measurements: MeasurementInfo[] }>(
+        `/api/v1/projects/${projectId}/measurements`
+      );
+      setProjectMeasurements(r.measurements);
+    } catch {
+      setProjectMeasurements([]);
+    }
+  }, [projectId]);
+
   const loadSheetMeasurements = useCallback(async () => {
+    void loadProjectMeasurements();
     if (!activeSheetId) {
       setSheetMeasurements([]);
       setMeasurementAggregates(null);
@@ -220,7 +245,49 @@ export function PlanViewerWorkspace({
       setSheetMeasurements([]);
       setMeasurementAggregates(null);
     }
-  }, [projectId, activeSheetId]);
+  }, [projectId, activeSheetId, loadProjectMeasurements]);
+
+  const broadcast = useBroadcastEvent();
+  const { user } = useAuth();
+  const remoteLocks = useRemoteMeasurementLockMap();
+  const setCollabPdfCursor = useSetCollaborationPdfCursor();
+  const activeSheetIdRef = useRef(activeSheetId);
+  activeSheetIdRef.current = activeSheetId;
+
+  const bumpMeasurementsRemote = useCallback(() => {
+    const sid = activeSheetIdRef.current;
+    if (!sid) return;
+    broadcast({
+      type: "contruo.measurements_changed",
+      sheetId: sid,
+    } as never);
+  }, [broadcast]);
+
+  const bumpConditionsRemote = useCallback(() => {
+    broadcast({ type: "contruo.conditions_changed" } as never);
+  }, [broadcast]);
+
+  const loadSheetMeasurementsRef = useRef(loadSheetMeasurements);
+  const loadProjectMeasurementsRef = useRef(loadProjectMeasurements);
+  const loadConditionsRef = useRef(loadConditions);
+  useEffect(() => {
+    loadSheetMeasurementsRef.current = loadSheetMeasurements;
+    loadProjectMeasurementsRef.current = loadProjectMeasurements;
+    loadConditionsRef.current = loadConditions;
+  }, [loadSheetMeasurements, loadProjectMeasurements, loadConditions]);
+
+  useEventListener(({ event }) => {
+    if (!event || typeof event !== "object") return;
+    const ev = event as CollaborationBroadcastEvent;
+    if (ev.type === "contruo.measurements_changed") {
+      void loadSheetMeasurementsRef.current();
+      void loadProjectMeasurementsRef.current();
+    }
+    if (ev.type === "contruo.conditions_changed") {
+      void loadConditionsRef.current();
+      void loadSheetMeasurementsRef.current();
+    }
+  });
 
   /** After condition CRUD (especially delete), CASCADE removes measurements — refetch both lists. */
   const refreshConditionsAndSheetMeasurements = useCallback(async () => {
@@ -233,17 +300,17 @@ export function PlanViewerWorkspace({
   }, [loadSheetMeasurements]);
 
   useEffect(() => {
-    const ids = new Set(sheetMeasurements.map((m) => m.id));
-    setSelectedMeasurementId((prev) => (prev && ids.has(prev) ? prev : null));
-    setMeasurementUndoStack((s) => s.filter((id) => ids.has(id)));
-  }, [sheetMeasurements]);
+    const ids = new Set(projectMeasurements.map((m) => m.id));
+    setSelectedIds((prev) => new Set([...prev].filter((id) => ids.has(id))));
+    const sheetIds = new Set(sheetMeasurements.map((m) => m.id));
+    setMeasurementUndoStack((s) => s.filter((id) => sheetIds.has(id)));
+  }, [sheetMeasurements, projectMeasurements]);
 
   useEffect(() => {
     setLinearDraft([]);
     setLinearHoverPdf(null);
     setAreaRing([]);
     setAreaHoverPdf(null);
-    setSelectedCountIds(new Set());
     setCountDragPreview(null);
     countDragPreviewRef.current = null;
     setCountPendingDots([]);
@@ -254,9 +321,24 @@ export function PlanViewerWorkspace({
   }, [activeConditionId]);
 
   useEffect(() => {
-    setSelectedMeasurementId(null);
     setMeasurementUndoStack([]);
   }, [activeSheetId]);
+
+  useEffect(() => {
+    if (!pendingFocusId) return;
+    const m = sheetMeasurements.find((x) => x.id === pendingFocusId);
+    if (!m) {
+      if (!projectMeasurements.some((x) => x.id === pendingFocusId)) {
+        setPendingFocusId(null);
+      }
+      return;
+    }
+    const b = getMeasurementPdfBounds(m);
+    if (b) {
+      requestAnimationFrame(() => canvasRef.current?.focusPdfRect(b));
+    }
+    setPendingFocusId(null);
+  }, [pendingFocusId, sheetMeasurements, projectMeasurements]);
 
   useEffect(() => {
     if (activeTool !== "linear") setLinearHoverPdf(null);
@@ -388,11 +470,19 @@ export function PlanViewerWorkspace({
         setActiveTool("select");
         void loadSheetMeasurements();
         void loadConditions();
+        bumpMeasurementsRemote();
       } catch {
         //
       }
     },
-    [activeSheetId, activeConditionId, projectId, loadSheetMeasurements, loadConditions]
+    [
+      activeSheetId,
+      activeConditionId,
+      projectId,
+      loadSheetMeasurements,
+      loadConditions,
+      bumpMeasurementsRemote,
+    ]
   );
 
   const areaTakeoffEnabled =
@@ -433,11 +523,20 @@ export function PlanViewerWorkspace({
         setActiveTool("select");
         void loadSheetMeasurements();
         void loadConditions();
+        bumpMeasurementsRemote();
       } catch {
         //
       }
     })();
-  }, [areaRing, activeSheetId, activeConditionId, projectId, loadSheetMeasurements, loadConditions]);
+  }, [
+    areaRing,
+    activeSheetId,
+    activeConditionId,
+    projectId,
+    loadSheetMeasurements,
+    loadConditions,
+    bumpMeasurementsRemote,
+  ]);
 
   const placeCountMarker = useCallback(
     async (pt: PdfPoint) => {
@@ -462,11 +561,115 @@ export function PlanViewerWorkspace({
         setSheetMeasurements((prev) => [...prev, created]);
         void loadSheetMeasurements();
         void loadConditions();
+        bumpMeasurementsRemote();
       } catch {
         setCountPendingDots((p) => p.filter((d) => d.tempId !== tempId));
       }
     },
-    [activeSheetId, activeConditionId, projectId, loadSheetMeasurements, loadConditions]
+    [
+      activeSheetId,
+      activeConditionId,
+      projectId,
+      loadSheetMeasurements,
+      loadConditions,
+      bumpMeasurementsRemote,
+    ]
+  );
+
+  const applyHitSelection = useCallback(
+    (id: string | null, modifiers: { ctrlKey: boolean; metaKey: boolean }) => {
+      if (id != null && remoteLocks.has(id)) return;
+      if (id == null) {
+        setSelectedIds(new Set());
+        return;
+      }
+      if (modifiers.ctrlKey || modifiers.metaKey) {
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+        });
+      } else {
+        setSelectedIds(new Set([id]));
+      }
+      setRightPanelTab("quantities");
+    },
+    [remoteLocks]
+  );
+
+  const onQuantitiesMeasurementSelect = useCallback(
+    (id: string, modifiers: { ctrlKey: boolean; metaKey: boolean }) => {
+      if (remoteLocks.has(id)) return;
+      if (modifiers.ctrlKey || modifiers.metaKey) {
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+        });
+      } else {
+        setSelectedIds(new Set([id]));
+      }
+    },
+    [remoteLocks]
+  );
+
+  const onQuantitiesNavigate = useCallback(
+    (m: MeasurementInfo) => {
+      if (m.sheet_id !== activeSheetId) {
+        setUserSheetId(m.sheet_id);
+      }
+      setPendingFocusId(m.id);
+    },
+    [activeSheetId]
+  );
+
+  const onQuantitiesPatch = useCallback(
+    async (id: string, patch: { override_value?: number | null }) => {
+      try {
+        await api.patch(`/api/v1/measurements/${id}`, patch);
+        await loadSheetMeasurements();
+        void loadConditions();
+        bumpMeasurementsRemote();
+      } catch {
+        //
+      }
+    },
+    [loadSheetMeasurements, loadConditions, bumpMeasurementsRemote]
+  );
+
+  const onQuantitiesDelete = useCallback(
+    async (id: string) => {
+      try {
+        await api.delete(`/api/v1/measurements/${id}`);
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+        await loadSheetMeasurements();
+        void loadConditions();
+        bumpMeasurementsRemote();
+      } catch {
+        //
+      }
+    },
+    [loadSheetMeasurements, loadConditions, bumpMeasurementsRemote]
+  );
+
+  const onQuantitiesReassign = useCallback(
+    async (id: string, conditionId: string) => {
+      try {
+        await api.patch(`/api/v1/measurements/${id}`, { condition_id: conditionId });
+        await loadSheetMeasurements();
+        void loadConditions();
+        bumpMeasurementsRemote();
+      } catch {
+        //
+      }
+    },
+    [loadSheetMeasurements, loadConditions, bumpMeasurementsRemote]
   );
 
   const handleSelectPdfPoint = useCallback(
@@ -479,67 +682,51 @@ export function PlanViewerWorkspace({
 
       for (const m of sheetMeasurements) {
         if (m.measurement_type !== "count" || m.geometry.type !== "count") continue;
+        if (remoteLocks.has(m.id)) continue;
         const pos = m.geometry.position;
         const d = Math.hypot(pt.x - pos.x, pt.y - pos.y);
         if (d <= tol * 1.5 && (!best || d < best.d)) best = { id: m.id, d };
       }
       if (best) {
-        if (modifiers.ctrlKey || modifiers.metaKey) {
-          setSelectedCountIds((prev) => {
-            const next = new Set(prev);
-            if (next.has(best!.id)) next.delete(best!.id);
-            else next.add(best!.id);
-            const primary =
-              next.size === 0
-                ? null
-                : next.has(best!.id)
-                  ? best!.id
-                  : [...next][0] ?? null;
-            queueMicrotask(() => setSelectedMeasurementId(primary));
-            return next;
-          });
-          return;
-        }
-        setSelectedMeasurementId(best.id);
-        setSelectedCountIds(new Set([best.id]));
+        applyHitSelection(best.id, modifiers);
         return;
       }
 
       best = null;
       for (const m of sheetMeasurements) {
         if (m.measurement_type !== "area" || m.geometry.type !== "area") continue;
+        if (remoteLocks.has(m.id)) continue;
         const outer = m.geometry.outer.map((v) => ({ x: v.x, y: v.y }));
         if (outer.length < 3) continue;
         if (pointInPolygon(pt.x, pt.y, outer)) {
-          setSelectedMeasurementId(m.id);
-          setSelectedCountIds(new Set());
+          applyHitSelection(m.id, modifiers);
           return;
         }
         const d = distancePointToPolygonEdge(pt.x, pt.y, outer, true);
         if (d <= tol && (!best || d < best.d)) best = { id: m.id, d };
       }
       if (best) {
-        setSelectedMeasurementId(best.id);
-        setSelectedCountIds(new Set());
+        applyHitSelection(best.id, modifiers);
         return;
       }
 
       best = null;
       for (const m of sheetMeasurements) {
         if (m.measurement_type !== "linear" || m.geometry.type !== "linear") continue;
+        if (remoteLocks.has(m.id)) continue;
         const verts = m.geometry.vertices;
         const d = distancePointToPolyline(pt.x, pt.y, verts);
         if (d <= tol && (!best || d < best.d)) best = { id: m.id, d };
       }
-      setSelectedMeasurementId(best ? best.id : null);
-      setSelectedCountIds(new Set());
+      applyHitSelection(best ? best.id : null, modifiers);
     },
-    [sheetMeasurements]
+    [sheetMeasurements, applyHitSelection, remoteLocks]
   );
 
   const onCountMarkerPointerDown = useCallback(
     (measurementId: string, e: React.PointerEvent<SVGCircleElement>) => {
       if (!canEditMeasurements || activeTool !== "select") return;
+      if (remoteLocks.has(measurementId)) return;
       e.preventDefault();
       e.stopPropagation();
       const m = sheetMeasurements.find((x) => x.id === measurementId);
@@ -591,6 +778,7 @@ export function PlanViewerWorkspace({
           );
           void loadSheetMeasurements();
           void loadConditions();
+          bumpMeasurementsRemote();
         } catch {
           //
         }
@@ -601,7 +789,15 @@ export function PlanViewerWorkspace({
       el.addEventListener("pointerup", onUp);
       el.addEventListener("pointercancel", onUp);
     },
-    [canEditMeasurements, activeTool, sheetMeasurements, loadSheetMeasurements, loadConditions]
+    [
+      canEditMeasurements,
+      activeTool,
+      sheetMeasurements,
+      loadSheetMeasurements,
+      loadConditions,
+      remoteLocks,
+      bumpMeasurementsRemote,
+    ]
   );
 
   const linearTakeoff = useMemo(() => {
@@ -668,10 +864,11 @@ export function PlanViewerWorkspace({
       ? { active: true, onPdfClick: handleSelectPdfPoint }
       : null;
 
-  const selectedMeasurement = useMemo(
-    () => sheetMeasurements.find((m) => m.id === selectedMeasurementId) ?? null,
-    [sheetMeasurements, selectedMeasurementId]
-  );
+  const selectedMeasurement = useMemo(() => {
+    if (selectedIds.size !== 1) return null;
+    const only = [...selectedIds][0]!;
+    return sheetMeasurements.find((m) => m.id === only) ?? null;
+  }, [sheetMeasurements, selectedIds]);
 
   const compatibleConditionsForReassign = useMemo(() => {
     if (!selectedMeasurement) return [];
@@ -680,18 +877,20 @@ export function PlanViewerWorkspace({
 
   const onReassignMeasurementCondition = useCallback(
     async (newConditionId: string) => {
-      if (!selectedMeasurementId || !newConditionId) return;
+      const only = selectedIds.size === 1 ? [...selectedIds][0] : null;
+      if (!only || !newConditionId) return;
       try {
-        await api.patch(`/api/v1/measurements/${selectedMeasurementId}`, {
+        await api.patch(`/api/v1/measurements/${only}`, {
           condition_id: newConditionId,
         });
         await loadSheetMeasurements();
         void loadConditions();
+        bumpMeasurementsRemote();
       } catch {
         //
       }
     },
-    [selectedMeasurementId, loadSheetMeasurements, loadConditions]
+    [selectedIds, loadSheetMeasurements, loadConditions, bumpMeasurementsRemote]
   );
 
   const linearOverlay = useMemo(() => {
@@ -709,7 +908,8 @@ export function PlanViewerWorkspace({
           color: c?.color ?? "#888",
           lineWidth: c?.line_width ?? 2,
           dash: conditionDash(c?.line_style ?? "solid"),
-          emphasize: m.id === selectedMeasurementId,
+          emphasize: selectedIds.has(m.id),
+          remoteLockColor: remoteLocks.get(m.id)?.color,
         };
       })
       .filter((p) => p.vertices.length >= 2);
@@ -733,7 +933,8 @@ export function PlanViewerWorkspace({
     linearHoverPdf,
     activeCondition,
     linearTakeoffEnabled,
-    selectedMeasurementId,
+    selectedIds,
+    remoteLocks,
   ]);
 
   const areaOverlay = useMemo(() => {
@@ -762,7 +963,8 @@ export function PlanViewerWorkspace({
             c != null
               ? formatAreaQuantity(m.measured_value, c.unit)
               : undefined,
-          emphasize: m.id === selectedMeasurementId,
+          emphasize: selectedIds.has(m.id),
+          remoteLockColor: remoteLocks.get(m.id)?.color,
         };
       });
 
@@ -782,11 +984,12 @@ export function PlanViewerWorkspace({
   }, [
     sheetMeasurements,
     conditions,
-    selectedMeasurementId,
+    selectedIds,
     areaTakeoffEnabled,
     activeCondition,
     areaRing,
     areaHoverPdf,
+    remoteLocks,
   ]);
 
   const countOverlay = useMemo(() => {
@@ -805,7 +1008,8 @@ export function PlanViewerWorkspace({
           x: px,
           y: py,
           color: c?.color ?? "#f43f5e",
-          emphasize: selectedCountIds.has(m.id),
+          emphasize: selectedIds.has(m.id),
+          remoteLockColor: remoteLocks.get(m.id)?.color,
           onPointerDown:
             canEditMeasurements && activeTool === "select"
               ? (ev: React.PointerEvent<SVGCircleElement>) =>
@@ -825,13 +1029,14 @@ export function PlanViewerWorkspace({
   }, [
     sheetMeasurements,
     conditions,
-    selectedCountIds,
+    selectedIds,
     countDragPreview,
     countPendingDots,
     activeCondition,
     canEditMeasurements,
     activeTool,
     onCountMarkerPointerDown,
+    remoteLocks,
   ]);
 
   const linearRunningDisplay = useMemo(() => {
@@ -908,6 +1113,15 @@ export function PlanViewerWorkspace({
     setPageMatchCount(n);
   }, []);
 
+  const exportSummary = useMemo(
+    () => ({
+      conditions: conditions.length,
+      measurements: projectMeasurements.length,
+      sheets: new Set(projectMeasurements.map((m) => m.sheet_id)).size,
+    }),
+    [conditions, projectMeasurements]
+  );
+
   const toolLabel = useCallback((t: TakeoffTool) => {
     const labels: Record<TakeoffTool, string> = {
       select: "Select",
@@ -930,6 +1144,8 @@ export function PlanViewerWorkspace({
         activeConditionId={activeConditionId}
         onConditionChange={(id) => setActiveConditionId(id)}
         conditionPickerDisabled={conditionsLoading || conditions.length === 0}
+        canExport={canExport}
+        onExportClick={() => setExportDialogOpen(true)}
       />
     );
     return () => setTakeoffSlot(null);
@@ -940,43 +1156,7 @@ export function PlanViewerWorkspace({
     conditions,
     activeConditionId,
     conditionsLoading,
-  ]);
-
-  useEffect(() => {
-    setStatusBarSlot(
-      <>
-        <span className="shrink-0 text-muted-foreground">Condition</span>
-        {activeCondition ? (
-          <>
-            <span
-              className="h-2 w-2 shrink-0 rounded-full border border-border"
-              style={{ backgroundColor: activeCondition.color }}
-            />
-            <span className="min-w-0 truncate font-medium text-foreground">
-              {activeCondition.name}
-            </span>
-          </>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-        <span className="mx-2 text-border">|</span>
-        <span className="shrink-0 text-muted-foreground">Tool</span>
-        <span className="font-medium text-foreground">{toolLabel(activeTool)}</span>
-        {conditionsError ? (
-          <>
-            <span className="mx-2 text-border">|</span>
-            <span className="truncate text-destructive">{conditionsError}</span>
-          </>
-        ) : null}
-      </>
-    );
-    return () => setStatusBarSlot(null);
-  }, [
-    activeCondition,
-    activeTool,
-    conditionsError,
-    setStatusBarSlot,
-    toolLabel,
+    canExport,
   ]);
 
   useEffect(() => {
@@ -1081,6 +1261,14 @@ export function PlanViewerWorkspace({
         return;
       }
 
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "e") {
+        if (canExport) {
+          e.preventDefault();
+          setExportDialogOpen(true);
+        }
+        return;
+      }
+
       if (e.key === "Escape") {
         if (areaRingRef.current.length > 0) {
           e.preventDefault();
@@ -1101,12 +1289,7 @@ export function PlanViewerWorkspace({
         }
       }
       if ((e.key === "Delete" || e.key === "Backspace") && canEditMeasurements) {
-        const idsToDelete =
-          selectedCountIds.size > 0
-            ? [...selectedCountIds]
-            : selectedMeasurementId
-              ? [selectedMeasurementId]
-              : [];
+        const idsToDelete = [...selectedIds].filter((id) => !remoteLocks.has(id));
         if (idsToDelete.length === 0) return;
         e.preventDefault();
         void (async () => {
@@ -1114,11 +1297,11 @@ export function PlanViewerWorkspace({
             await Promise.all(
               idsToDelete.map((mid) => api.delete(`/api/v1/measurements/${mid}`))
             );
-            setSelectedMeasurementId(null);
-            setSelectedCountIds(new Set());
+            setSelectedIds(new Set());
             setMeasurementUndoStack((s) => s.filter((x) => !idsToDelete.includes(x)));
             await loadSheetMeasurements();
             void loadConditions();
+            bumpMeasurementsRemote();
           } catch {
             //
           }
@@ -1155,6 +1338,7 @@ export function PlanViewerWorkspace({
               setMeasurementUndoStack((s) => s.slice(0, -1));
               await loadSheetMeasurements();
               void loadConditions();
+              bumpMeasurementsRemote();
             } catch {
               //
             }
@@ -1216,6 +1400,7 @@ export function PlanViewerWorkspace({
       nextLocalMatch,
       prevLocalMatch,
       canEditMeasurements,
+      canExport,
       conditions,
       activeTool,
       finishLinearMeasurement,
@@ -1223,8 +1408,9 @@ export function PlanViewerWorkspace({
       measurementUndoStack,
       loadSheetMeasurements,
       loadConditions,
-      selectedMeasurementId,
-      selectedCountIds,
+      selectedIds,
+      bumpMeasurementsRemote,
+      remoteLocks,
     ]
   );
 
@@ -1234,7 +1420,24 @@ export function PlanViewerWorkspace({
   }, [onKeyDown]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <CollaborationRoomShell
+      sheets={sheets}
+      activeSheetId={activeSheetId}
+      pageNumber={activeSheet?.page_number ?? 1}
+      selectedIds={selectedIds}
+      activeTool={activeTool}
+      canEditMeasurements={canEditMeasurements}
+      userId={user?.id ?? "viewer"}
+      userName={user?.full_name ?? "Member"}
+    >
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <ExportDialog
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+        projectId={projectId}
+        projectName={projectName}
+        summary={exportSummary}
+      />
       <ScaleIntroDialog
         open={scaleStep === "intro"}
         onContinue={() => setScaleStep("picking")}
@@ -1491,6 +1694,20 @@ export function PlanViewerWorkspace({
             areaOverlay={areaOverlay}
             countOverlay={countOverlay}
             selectToolProbe={selectToolProbe}
+            onPdfPointerMoveForPresence={setCollabPdfCursor ?? undefined}
+            presenceCursors={
+              activeSheetId
+                ? ({ vp, cssW, cssH }) => (
+                    <CollaborationCursorsLayer
+                      vp={vp}
+                      cssW={cssW}
+                      cssH={cssH}
+                      sheetId={activeSheetId}
+                      pageNumber={activeSheet?.page_number ?? 1}
+                    />
+                  )
+                : undefined
+            }
             className="min-h-0 flex-1"
           />
 
@@ -1503,7 +1720,7 @@ export function PlanViewerWorkspace({
             aria-hidden
           />
 
-          {selectedMeasurementId &&
+          {selectedIds.size === 1 &&
             selectedMeasurement &&
             canEditMeasurements &&
             activeTool === "select" &&
@@ -1524,14 +1741,38 @@ export function PlanViewerWorkspace({
             </div>
           ) : null}
 
-          <div className="flex h-7 shrink-0 items-center border-t border-border bg-surface px-3 text-xs text-muted-foreground">
+          <div className="flex min-h-7 shrink-0 flex-wrap items-center gap-y-1 border-t border-border bg-surface px-3 py-1 text-xs text-muted-foreground">
+            <span className="shrink-0 text-muted-foreground pr-1">Condition:</span>
+            {activeCondition ? (
+              <>
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full border border-border"
+                  style={{ backgroundColor: activeCondition.color }}
+                />
+                <span className="min-w-0 max-w-[min(200px,28vw)] truncate font-medium text-foreground pl-1">
+                  {activeCondition.name}
+                </span>
+              </>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+            <span className="mx-2 text-border">|</span>
+            <span className="shrink-0 text-muted-foreground pr-1">Tool:</span>
+            <span className="shrink-0 font-medium text-foreground pl-1"> {toolLabel(activeTool)}</span>
+            {conditionsError ? (
+              <>
+                <span className="mx-2 text-border">|</span>
+                <span className="min-w-0 max-w-full truncate text-destructive">{conditionsError}</span>
+              </>
+            ) : null}
+            <span className="mx-2 text-border">|</span>
             <span className="min-w-0 truncate">
               {activeSheet
                 ? activeSheet.sheet_name ?? `Page ${activeSheet.page_number}`
                 : "No sheet"}
             </span>
             <span className="mx-2 text-border">|</span>
-            <span>{zoomPct}%</span>
+            <span className="shrink-0">{zoomPct}%</span>
             <span className="mx-2 text-border">|</span>
             <span className="min-w-0 truncate font-mono text-[11px] text-foreground/90">
               {activeSheet?.scale_value != null
@@ -1595,11 +1836,52 @@ export function PlanViewerWorkspace({
           maxSize="100%"
           className="flex min-h-0 min-w-0 flex-col border-l border-border bg-surface"
         >
+          <div className="flex shrink-0 border-b border-border">
+            <button
+              type="button"
+              onClick={() => setRightPanelTab("quantities")}
+              className={cn(
+                "flex-1 px-2 py-1.5 text-[11px] font-medium transition-colors",
+                rightPanelTab === "quantities"
+                  ? "border-b-2 border-primary bg-primary/5 text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Quantities
+            </button>
+            <button
+              type="button"
+              onClick={() => setRightPanelTab("conditions")}
+              className={cn(
+                "flex-1 px-2 py-1.5 text-[11px] font-medium transition-colors",
+                rightPanelTab === "conditions"
+                  ? "border-b-2 border-primary bg-primary/5 text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Conditions
+            </button>
+          </div>
           {conditionsLoading ? (
             <div className="flex flex-1 items-center justify-center gap-2 p-4 text-xs text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Loading conditions…
+              Loading…
             </div>
+          ) : rightPanelTab === "quantities" ? (
+            <QuantitiesPanel
+              measurements={projectMeasurements}
+              conditions={conditions}
+              sheets={planSheets}
+              loading={false}
+              activeSheetId={activeSheetId}
+              selectedIds={selectedIds}
+              onMeasurementSelect={onQuantitiesMeasurementSelect}
+              onNavigateToMeasurement={onQuantitiesNavigate}
+              onUpdateMeasurement={onQuantitiesPatch}
+              onDeleteMeasurement={onQuantitiesDelete}
+              onReassignCondition={onQuantitiesReassign}
+              canEdit={canEditMeasurements}
+            />
           ) : (
             <ConditionManagerPanel
               projectId={projectId}
@@ -1609,10 +1891,12 @@ export function PlanViewerWorkspace({
               onConditionsChange={refreshConditionsAndSheetMeasurements}
               onSheetMeasurementsRefresh={loadSheetMeasurements}
               canManage={canManageConditions}
+              onCollaborationMutation={bumpConditionsRemote}
             />
           )}
         </Panel>
       </Group>
-    </div>
+      </div>
+    </CollaborationRoomShell>
   );
 }

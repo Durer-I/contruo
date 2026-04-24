@@ -131,7 +131,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       setUser(data.user);
-      router.push("/dashboard");
+      if (data.user.needs_subscription) {
+        router.push("/settings/billing?checkout=1");
+      } else if (data.user.reactivation_required) {
+        router.push("/settings/billing");
+      } else {
+        router.push("/dashboard");
+      }
     },
     [router]
   );
@@ -154,7 +160,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         refresh_token: data.refresh_token,
       });
       setUser(data.user);
-      router.push("/dashboard");
+      if (data.user.needs_subscription) {
+        router.push("/settings/billing?checkout=1");
+      } else if (data.user.reactivation_required) {
+        router.push("/settings/billing");
+      } else {
+        router.push("/dashboard");
+      }
     },
     [router]
   );
