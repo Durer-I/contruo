@@ -1,6 +1,9 @@
 import { createClient } from "@/lib/supabase";
+import { debugHttpMarkDone, debugHttpMarkStart } from "@/lib/dev-instrument-fetch";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+const DEBUG_HTTP = process.env.NEXT_PUBLIC_DEBUG_HTTP === "1";
 
 /** Paths that must not send a Bearer token (avoid stale JWT on login/register). */
 function isAnonymousAuthPath(path: string): boolean {
@@ -44,40 +47,49 @@ async function request<T>(
   path: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers || {}),
-  };
+  const t0 = DEBUG_HTTP ? performance.now() : 0;
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    };
 
-  // Auto-attach JWT if not already provided (never on anonymous auth calls)
-  if (!headers["Authorization"] && !isAnonymousAuthPath(path)) {
-    const token = await getAccessToken();
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
+    // Auto-attach JWT if not already provided (never on anonymous auth calls)
+    if (!headers["Authorization"] && !isAnonymousAuthPath(path)) {
+      const token = await getAccessToken();
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+    }
+
+    const response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers,
+    });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      const error = body.error || {};
+      throw new ApiError(
+        error.code || "UNKNOWN_ERROR",
+        error.message || response.statusText,
+        response.status,
+        error.details || {}
+      );
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    return await response.json();
+  } finally {
+    if (DEBUG_HTTP) {
+      console.debug(
+        `[DEBUG_HTTP][api] ${path} TOTAL ${(performance.now() - t0).toFixed(1)}ms (session+fetch+json)`
+      );
     }
   }
-
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    const error = body.error || {};
-    throw new ApiError(
-      error.code || "UNKNOWN_ERROR",
-      error.message || response.statusText,
-      response.status,
-      error.details || {}
-    );
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return response.json();
 }
 
 /** Upload a single file via multipart/form-data with progress reporting.
@@ -95,12 +107,16 @@ async function uploadFile<T>(
   }: { fieldName?: string; onProgress?: (pct: number) => void; signal?: AbortSignal } = {}
 ): Promise<T> {
   const token = await getAccessToken();
+  const url = `${API_URL}${path}`;
+  const xhrId = DEBUG_HTTP ? debugHttpMarkStart("xhr", url) : 0;
+  const t0 = DEBUG_HTTP ? performance.now() : 0;
+
   return await new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const form = new FormData();
     form.append(fieldName, file, file.name);
 
-    xhr.open("POST", `${API_URL}${path}`);
+    xhr.open("POST", url);
     if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
     xhr.upload.onprogress = (event) => {
@@ -110,6 +126,9 @@ async function uploadFile<T>(
     };
 
     xhr.onload = () => {
+      if (DEBUG_HTTP && xhrId) {
+        debugHttpMarkDone(xhrId, "XHR_DONE", performance.now() - t0);
+      }
       const status = xhr.status;
       let body: { error?: { code?: string; message?: string; details?: Record<string, unknown> } } = {};
       try {
@@ -132,8 +151,18 @@ async function uploadFile<T>(
       }
     };
 
-    xhr.onerror = () => reject(new ApiError("NETWORK_ERROR", "Network error during upload", 0));
-    xhr.onabort = () => reject(new ApiError("UPLOAD_ABORTED", "Upload aborted", 0));
+    xhr.onerror = () => {
+      if (DEBUG_HTTP && xhrId) {
+        debugHttpMarkDone(xhrId, "XHR_ERROR", performance.now() - t0);
+      }
+      reject(new ApiError("NETWORK_ERROR", "Network error during upload", 0));
+    };
+    xhr.onabort = () => {
+      if (DEBUG_HTTP && xhrId) {
+        debugHttpMarkDone(xhrId, "XHR_ABORT", performance.now() - t0);
+      }
+      reject(new ApiError("UPLOAD_ABORTED", "Upload aborted", 0));
+    };
 
     if (signal) {
       if (signal.aborted) {

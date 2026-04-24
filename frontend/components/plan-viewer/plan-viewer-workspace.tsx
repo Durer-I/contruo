@@ -25,6 +25,7 @@ import type {
   PlanInfo,
   ProjectSearchResponse,
   SheetInfo,
+  SheetVectorSnapResponse,
 } from "@/types/project";
 import { useTakeoffToolbarSlot } from "@/providers/takeoff-toolbar-slot-provider";
 import { useAuth } from "@/providers/auth-provider";
@@ -151,16 +152,77 @@ export function PlanViewerWorkspace({
     panelIds: [...PANEL_IDS],
   });
 
-  const planSheets = useMemo(
+  const planSheetsBase = useMemo(
     () => sheets.filter((s) => s.plan_id === activePlanId),
     [sheets, activePlanId]
   );
 
   const activeSheetId = useMemo(() => {
-    if (planSheets.length === 0) return null;
-    if (userSheetId && planSheets.some((s) => s.id === userSheetId)) return userSheetId;
-    return planSheets[0]!.id;
-  }, [planSheets, userSheetId]);
+    if (planSheetsBase.length === 0) return null;
+    if (userSheetId && planSheetsBase.some((s) => s.id === userSheetId)) return userSheetId;
+    return planSheetsBase[0]!.id;
+  }, [planSheetsBase, userSheetId]);
+
+  /** Lazy-fetched PDF vector segments keyed by sheet id (not in project sheet list). */
+  const [snapBySheetId, setSnapBySheetId] = useState<
+    Record<string, SheetInfo["vector_snap_segments"]>
+  >({});
+  const snapFetchAttemptedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const ids = new Set(sheets.map((s) => s.id));
+    snapFetchAttemptedRef.current.forEach((id) => {
+      if (!ids.has(id)) snapFetchAttemptedRef.current.delete(id);
+    });
+    setSnapBySheetId((prev) => {
+      const next = { ...prev };
+      for (const k of Object.keys(next)) {
+        if (!ids.has(k)) delete next[k];
+      }
+      return next;
+    });
+  }, [sheets]);
+
+  useEffect(() => {
+    if (!activeSheetId) return;
+    const row = sheets.find((s) => s.id === activeSheetId);
+    const count = row?.vector_snap_segment_count ?? 0;
+    if (count === 0) return;
+    if (snapFetchAttemptedRef.current.has(activeSheetId)) return;
+    snapFetchAttemptedRef.current.add(activeSheetId);
+    let cancelled = false;
+    void api
+      .get<SheetVectorSnapResponse>(`/api/v1/sheets/${activeSheetId}/vector-snap`)
+      .then((r) => {
+        if (cancelled) return;
+        setSnapBySheetId((m) => ({
+          ...m,
+          [activeSheetId]: r.segments ?? null,
+        }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        snapFetchAttemptedRef.current.delete(activeSheetId);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSheetId, sheets]);
+
+  const sheetsWithSnap = useMemo(
+    () =>
+      sheets.map((s) => ({
+        ...s,
+        vector_snap_segments:
+          s.id in snapBySheetId ? snapBySheetId[s.id] : s.vector_snap_segments,
+      })),
+    [sheets, snapBySheetId]
+  );
+
+  const planSheets = useMemo(
+    () => sheetsWithSnap.filter((s) => s.plan_id === activePlanId),
+    [sheetsWithSnap, activePlanId]
+  );
 
   const activeSheet = useMemo(
     () => planSheets.find((s) => s.id === activeSheetId) ?? null,
@@ -1656,7 +1718,7 @@ export function PlanViewerWorkspace({
 
   return (
     <CollaborationRoomShell
-      sheets={sheets}
+      sheets={sheetsWithSnap}
       activeSheetId={activeSheetId}
       pageNumber={activeSheet?.page_number ?? 1}
       selectedIds={selectedIds}
@@ -1904,14 +1966,7 @@ export function PlanViewerWorkspace({
             </div>
           )}
 
-          {activeTool === "linear" && linearTakeoffEnabled && (
-            <div className="shrink-0 border-b border-border bg-muted/40 px-3 py-1.5 text-[11px] text-foreground">
-              {
-                "Linear takeoff: click to add points — double-click or Enter to finish, Esc to cancel the draft."
-              }
-            </div>
-          )}
-
+          
           {docError && (
             <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-foreground">
               {docError}
@@ -1927,7 +1982,7 @@ export function PlanViewerWorkspace({
             loading={searchLoading}
             activeSheetId={activeSheetId}
             onPickSheet={(id) => {
-              const hit = sheets.find((s) => s.id === id);
+              const hit = sheetsWithSnap.find((s) => s.id === id);
               if (hit && hit.plan_id !== activePlanId) {
                 skipSheetResetOnPlanChangeRef.current = true;
                 onActivePlanChange(hit.plan_id);

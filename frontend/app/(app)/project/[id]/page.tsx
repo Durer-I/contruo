@@ -10,6 +10,12 @@ import { useAuth } from "@/providers/auth-provider";
 import { hasPermission, type Role } from "@/lib/permissions";
 import type { PlanInfo, ProjectInfo, SheetInfo } from "@/types/project";
 
+/** Dedupe concurrent initial loads (e.g. React Strict Mode double mount in dev). */
+const projectBundleInflight = new Map<
+  string,
+  Promise<{ project: ProjectInfo; plans: PlanInfo[]; sheets: SheetInfo[] }>
+>();
+
 import { PlanProcessingStatus } from "@/components/projects/plan-processing-status";
 import {
   ProjectTopBarRegistrar,
@@ -54,14 +60,35 @@ export default function ProjectPage() {
     }
     setLoadError(null);
     try {
-      const [p, plansResp, sheetsResp] = await Promise.all([
-        api.get<ProjectInfo>(`/api/v1/projects/${projectId}`),
-        api.get<{ plans: PlanInfo[] }>(`/api/v1/projects/${projectId}/plans`),
-        api.get<{ sheets: SheetInfo[] }>(`/api/v1/projects/${projectId}/sheets`),
-      ]);
-      setProject(p);
-      setPlans(plansResp.plans);
-      setSheets(sheetsResp.sheets);
+      const fetchBundle = async () => {
+        const [p, plansResp, sheetsResp] = await Promise.all([
+          api.get<ProjectInfo>(`/api/v1/projects/${projectId}`),
+          api.get<{ plans: PlanInfo[] }>(`/api/v1/projects/${projectId}/plans`),
+          api.get<{ sheets: SheetInfo[] }>(`/api/v1/projects/${projectId}/sheets`),
+        ]);
+        return { project: p, plans: plansResp.plans, sheets: sheetsResp.sheets };
+      };
+
+      let bundle: { project: ProjectInfo; plans: PlanInfo[]; sheets: SheetInfo[] };
+      if (!silent) {
+        let inflight = projectBundleInflight.get(projectId);
+        if (!inflight) {
+          inflight = fetchBundle();
+          projectBundleInflight.set(projectId, inflight);
+          void inflight.finally(() => {
+            if (projectBundleInflight.get(projectId) === inflight) {
+              projectBundleInflight.delete(projectId);
+            }
+          });
+        }
+        bundle = await inflight;
+      } else {
+        bundle = await fetchBundle();
+      }
+
+      setProject(bundle.project);
+      setPlans(bundle.plans);
+      setSheets(bundle.sheets);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : "Failed to load project";
       setLoadError(msg);

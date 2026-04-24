@@ -287,6 +287,49 @@ async def test_list_sheets_returns_thumbnails():
             assert len(body["sheets"]) == 1
             assert body["sheets"][0]["thumbnail_url"] == "https://signed.example/thumb.png"
             assert body["sheets"][0]["sheet_name"] == "A1.01 - First Floor Plan"
+            assert body["sheets"][0]["vector_snap_segment_count"] == 0
+            assert "vector_snap_segments" not in body["sheets"][0]
+
+
+@pytest.mark.anyio
+async def test_list_sheets_includes_segment_count_without_payload():
+    ctx = _ctx("viewer")
+    _override_auth(ctx)
+    _override_db(_mock_db())
+
+    sheet = MagicMock()
+    sheet.id = uuid.uuid4()
+    sheet.plan_id = uuid.uuid4()
+    sheet.project_id = uuid.uuid4()
+    sheet.page_number = 1
+    sheet.sheet_name = "P1"
+    sheet.scale_value = None
+    sheet.scale_unit = None
+    sheet.scale_label = None
+    sheet.scale_source = None
+    sheet.width_px = 100
+    sheet.height_px = 100
+    sheet.thumbnail_path = "t.png"
+    sheet.created_at = datetime.now(timezone.utc)
+    sheet.vector_snap_segments = [{"x1": 0, "y1": 0, "x2": 1, "y2": 1}] * 3
+
+    with (
+        patch(
+            "app.services.plan_service.list_project_sheets",
+            new_callable=AsyncMock,
+            return_value=[sheet],
+        ),
+        patch(
+            "app.services.plan_service.sheet_thumbnail_url",
+            return_value="https://signed.example/thumb.png",
+        ),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            r = await ac.get(f"/api/v1/projects/{uuid.uuid4()}/sheets")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["sheets"][0]["vector_snap_segment_count"] == 3
+            assert "vector_snap_segments" not in body["sheets"][0]
 
 
 # ── Project delete ───────────────────────────────────────────────────
@@ -321,3 +364,30 @@ async def test_delete_project_forbidden_for_estimator():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         r = await ac.delete(f"/api/v1/projects/{uuid.uuid4()}")
         assert r.status_code == 403
+
+
+# ── Sheet vector snap ────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_get_sheet_vector_snap_returns_segments():
+    ctx = _ctx("viewer")
+    _override_auth(ctx)
+    _override_db(_mock_db())
+
+    sid = uuid.uuid4()
+    fake_sheet = MagicMock()
+    fake_sheet.vector_snap_segments = [{"x1": 0.0, "y1": 0.0, "x2": 10.0, "y2": 0.0}]
+
+    with patch(
+        "app.services.sheet_service.get_sheet",
+        new_callable=AsyncMock,
+        return_value=fake_sheet,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            r = await ac.get(f"/api/v1/sheets/{sid}/vector-snap")
+            assert r.status_code == 200
+            body = r.json()
+            assert body["segments"] is not None
+            assert len(body["segments"]) == 1
+            assert body["segments"][0]["x2"] == 10.0

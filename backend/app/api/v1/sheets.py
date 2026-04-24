@@ -7,9 +7,23 @@ from app.dependencies import get_db
 from app.middleware.auth import AuthContext
 from app.services.permission_service import Permission, require_permission
 from app.services import plan_service, sheet_service
-from app.schemas.plan import PatchSheetScaleRequest, SheetResponse
+from app.schemas.plan import PatchSheetScaleRequest, SheetResponse, SheetVectorSnapResponse
 
 router = APIRouter(prefix="/sheets")
+
+
+@router.get("/{sheet_id}/vector-snap", response_model=SheetVectorSnapResponse)
+async def get_sheet_vector_snap(
+    sheet_id: uuid.UUID,
+    auth: AuthContext = Depends(require_permission(Permission.VIEW_PLANS)),
+    db: AsyncSession = Depends(get_db),
+):
+    """PDF vector segments for snap-to-geometry on one sheet (omit from project sheet list for size)."""
+    sheet = await sheet_service.get_sheet(db, auth.org_id, sheet_id)
+    segs = sheet.vector_snap_segments
+    if isinstance(segs, list):
+        return SheetVectorSnapResponse(segments=segs)
+    return SheetVectorSnapResponse(segments=None)
 
 
 @router.patch("/{sheet_id}/scale", response_model=SheetResponse)

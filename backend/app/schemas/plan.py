@@ -40,6 +40,31 @@ class SheetResponse(BaseModel):
     vector_snap_segments: list[dict[str, float]] | None = None
 
 
+class SheetListItemResponse(BaseModel):
+    """Sheet row for project listing — omits heavy ``vector_snap_segments`` (see vector-snap endpoint)."""
+
+    id: uuid.UUID
+    plan_id: uuid.UUID
+    project_id: uuid.UUID
+    page_number: int
+    sheet_name: str | None
+    scale_value: float | None
+    scale_unit: str | None
+    scale_label: str | None
+    scale_source: str | None = None
+    width_px: int | None
+    height_px: int | None
+    thumbnail_url: str | None = None
+    created_at: datetime
+    vector_snap_segment_count: int = 0
+
+
+class SheetVectorSnapResponse(BaseModel):
+    """Full snap segments for one sheet (lazy-loaded by the viewer)."""
+
+    segments: list[dict[str, float]] | None = None
+
+
 class PatchSheetScaleRequest(BaseModel):
     """Manual calibration: real distance along a segment measured in PDF points."""
 
@@ -63,7 +88,7 @@ class ProjectSearchResponse(BaseModel):
 
 
 class SheetListResponse(BaseModel):
-    sheets: list[SheetResponse]
+    sheets: list[SheetListItemResponse]
 
 
 class PlanDocumentUrlResponse(BaseModel):

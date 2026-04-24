@@ -2,6 +2,7 @@
 
 import { ThemeProvider } from "next-themes";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DevHttpInstrumentation } from "@/components/dev/dev-http-instrumentation";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
@@ -12,7 +13,10 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       storageKey="contruo-theme"
       disableTransitionOnChange
     >
-      <TooltipProvider delay={500}>{children}</TooltipProvider>
+      <TooltipProvider delay={500}>
+        <DevHttpInstrumentation />
+        {children}
+      </TooltipProvider>
     </ThemeProvider>
   );
 }

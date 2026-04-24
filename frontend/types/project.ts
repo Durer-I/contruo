@@ -34,6 +34,12 @@ export interface PlanInfo {
   updated_at: string;
 }
 
+export type VectorSnapSegment = { x1: number; y1: number; x2: number; y2: number };
+
+export interface SheetVectorSnapResponse {
+  segments: VectorSnapSegment[] | null;
+}
+
 export interface SheetInfo {
   id: string;
   plan_id: string;
@@ -48,8 +54,10 @@ export interface SheetInfo {
   height_px: number | null;
   thumbnail_url: string | null;
   created_at: string;
-  /** PDF vector segments for snap (from processing); may be undefined for older sheets. */
-  vector_snap_segments?: Array<{ x1: number; y1: number; x2: number; y2: number }> | null;
+  /** From project sheet list; full segments loaded lazily per active sheet. */
+  vector_snap_segment_count: number;
+  /** Populated after `GET /api/v1/sheets/{id}/vector-snap` (or PATCH scale response). */
+  vector_snap_segments?: VectorSnapSegment[] | null;
 }
 
 export interface SearchHit {

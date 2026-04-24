@@ -16,7 +16,7 @@ from app.schemas.project import (
 from app.schemas.plan import (
     PlanResponse,
     PlanListResponse,
-    SheetResponse,
+    SheetListItemResponse,
     SheetListResponse,
     ProjectSearchResponse,
     SearchHit,
@@ -222,9 +222,14 @@ async def list_project_sheets(
     db: AsyncSession = Depends(get_db),
 ):
     sheets = await plan_service.list_project_sheets(db, auth.org_id, project_id)
+
+    def _snap_count(row) -> int:
+        segs = getattr(row, "vector_snap_segments", None)
+        return len(segs) if isinstance(segs, list) else 0
+
     return {
         "sheets": [
-            SheetResponse(
+            SheetListItemResponse(
                 id=s.id,
                 plan_id=s.plan_id,
                 project_id=s.project_id,
@@ -238,9 +243,7 @@ async def list_project_sheets(
                 height_px=s.height_px,
                 thumbnail_url=plan_service.sheet_thumbnail_url(s),
                 created_at=s.created_at,
-                vector_snap_segments=s.vector_snap_segments
-                if isinstance(getattr(s, "vector_snap_segments", None), list)
-                else None,
+                vector_snap_segment_count=_snap_count(s),
             )
             for s in sheets
         ]
