@@ -20,6 +20,7 @@ PLANS_BUCKET = "plans"
 THUMBNAILS_BUCKET = "plan-thumbnails"
 #: Generated export files (xlsx/pdf); private bucket, short-lived objects.
 EXPORTS_BUCKET = "exports"
+PROJECT_COVERS_BUCKET = "project-covers"
 
 #: Default signed URL lifetime for plan/thumbnail access. 1 hour is a reasonable balance:
 #: long enough that polling clients don't need to re-request often, short enough that a leaked
@@ -82,9 +83,16 @@ def signed_url(bucket: str, path: str, expires_sec: int = SIGNED_URL_EXPIRES_SEC
     sb = _admin_client()
     try:
         result: Any = sb.storage.from_(bucket).create_signed_url(path, expires_sec)
-        # supabase-py returns a dict with 'signedURL' or 'signed_url' depending on version
+        # storage3 returns SignedUrlResponse (dict) with signedURL / signedUrl; older clients differ.
         if isinstance(result, dict):
-            return result.get("signedURL") or result.get("signed_url")
+            url = (
+                result.get("signedURL")
+                or result.get("signedUrl")
+                or result.get("signed_url")
+            )
+            return url if isinstance(url, str) and url.strip() else None
+        if isinstance(result, str) and result.strip():
+            return result
         return None
     except Exception as e:
         logger.warning("Failed to create signed URL for %s/%s: %s", bucket, path, e)
@@ -98,6 +106,11 @@ def plan_storage_path(org_id, plan_id, filename: str) -> str:
 
 def thumbnail_storage_path(org_id, plan_id, page_number: int) -> str:
     return f"{org_id}/plans/{plan_id}/thumbs/page-{page_number}.png"
+
+
+def project_cover_storage_path(org_id, project_id, ext: str) -> str:
+    """Canonical path for a project card cover (ext: jpg, png, webp)."""
+    return f"{org_id}/projects/{project_id}/cover.{ext}"
 
 
 def remove_files(bucket: str, paths: list[str]) -> None:

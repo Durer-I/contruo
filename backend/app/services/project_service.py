@@ -19,6 +19,20 @@ from app.utils import storage
 
 logger = logging.getLogger(__name__)
 
+#: Max cover upload size (JPEG/PNG/WebP).
+MAX_PROJECT_COVER_BYTES = 8 * 1024 * 1024
+_COVER_CONTENT_TYPES: dict[str, str] = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
+
+
+def project_cover_signed_url(path: str | None) -> str | None:
+    if not path:
+        return None
+    return storage.signed_url(storage.PROJECT_COVERS_BUCKET, path)
+
 
 async def create_project(
     db: AsyncSession,
@@ -68,10 +82,7 @@ async def list_projects(db: AsyncSession, org_id: uuid.UUID) -> list[dict]:
     sheet_counts_result = await db.execute(sheet_counts_stmt)
     sheet_counts = {row.project_id: row.c for row in sheet_counts_result}
 
-    member_count_stmt = select(func.count(User.id)).where(
-        User.org_id == org_id, User.deactivated_at.is_(None), User.is_guest.is_(False)
-    )
-    member_count = (await db.execute(member_count_stmt)).scalar_one()
+    member_count = await count_active_org_members(db, org_id)
 
     projects_stmt = (
         select(Project)
@@ -91,11 +102,31 @@ async def list_projects(db: AsyncSession, org_id: uuid.UUID) -> list[dict]:
             "created_by": p.created_by,
             "created_at": p.created_at,
             "updated_at": p.updated_at,
+            "cover_image_url": project_cover_signed_url(p.cover_image_path),
             "sheet_count": sheet_counts.get(p.id, 0),
             "member_count": member_count,
         }
         for p in projects
     ]
+
+
+async def count_sheets_for_project(
+    db: AsyncSession, org_id: uuid.UUID, project_id: uuid.UUID
+) -> int:
+    stmt = select(func.count(Sheet.id)).where(
+        Sheet.org_id == org_id, Sheet.project_id == project_id
+    )
+    return int((await db.execute(stmt)).scalar_one() or 0)
+
+
+async def count_active_org_members(db: AsyncSession, org_id: uuid.UUID) -> int:
+    """Active non-guest users in the org (same aggregate as the project list cards)."""
+    stmt = select(func.count(User.id)).where(
+        User.org_id == org_id,
+        User.deactivated_at.is_(None),
+        User.is_guest.is_(False),
+    )
+    return int((await db.execute(stmt)).scalar_one() or 0)
 
 
 async def get_project(db: AsyncSession, org_id: uuid.UUID, project_id: uuid.UUID) -> Project:
@@ -115,6 +146,8 @@ async def update_project(
     *,
     name: str | None = None,
     description: str | None = None,
+    #: True when the client JSON included ``description`` (including explicit ``null`` to clear).
+    description_provided: bool = False,
     status: str | None = None,
 ) -> Project:
     project = await get_project(db, org_id, project_id)
@@ -122,7 +155,7 @@ async def update_project(
     if name is not None and name != project.name:
         changes["name"] = name
         project.name = name
-    if description is not None and description != project.description:
+    if description_provided and description != project.description:
         changes["description"] = description
         project.description = description
     if status is not None and status != project.status:
@@ -143,6 +176,63 @@ async def update_project(
             entity_id=project.id,
             payload=changes,
         )
+        await db.refresh(project)
+    return project
+
+
+async def upload_project_cover(
+    db: AsyncSession,
+    org_id: uuid.UUID,
+    project_id: uuid.UUID,
+    acting_user_id: uuid.UUID,
+    *,
+    content: bytes,
+    content_type: str | None,
+) -> Project:
+    """Store a JPEG/PNG/WebP cover in Supabase; replaces any previous cover object."""
+    project = await get_project(db, org_id, project_id)
+    raw_ct = (content_type or "").split(";")[0].strip().lower()
+    ext = _COVER_CONTENT_TYPES.get(raw_ct)
+    if not ext:
+        raise AppException(
+            code="INVALID_COVER_TYPE",
+            message="Cover must be a JPEG, PNG, or WebP image",
+            status_code=400,
+        )
+    if len(content) > MAX_PROJECT_COVER_BYTES:
+        raise AppException(
+            code="COVER_TOO_LARGE",
+            message=f"Cover image must be at most {MAX_PROJECT_COVER_BYTES // (1024 * 1024)} MB",
+            status_code=400,
+        )
+
+    storage.ensure_bucket(storage.PROJECT_COVERS_BUCKET, public=False)
+    new_path = storage.project_cover_storage_path(org_id, project_id, ext)
+    old_path = project.cover_image_path
+    if old_path and old_path != new_path:
+        storage.remove_files(storage.PROJECT_COVERS_BUCKET, [old_path])
+
+    storage.upload_bytes(
+        storage.PROJECT_COVERS_BUCKET,
+        new_path,
+        content,
+        content_type=raw_ct,
+        upsert=True,
+    )
+    project.cover_image_path = new_path
+    await db.flush()
+    await log_event(
+        db,
+        org_id=org_id,
+        user_id=acting_user_id,
+        project_id=project.id,
+        event_type="project.cover_updated",
+        entity_type="project",
+        entity_id=project.id,
+        payload={},
+    )
+    # ``flush`` for EventLog can expire ``Project`` columns (e.g. ``updated_at``); avoid lazy IO in async route.
+    await db.refresh(project)
     return project
 
 
@@ -163,11 +253,14 @@ async def delete_project(
 
     plan_paths = [p.storage_path for p in plans if p.storage_path]
     thumb_paths = [s.thumbnail_path for s in sheets if s.thumbnail_path]
+    cover_path = project.cover_image_path
 
     if plan_paths:
         storage.remove_files(storage.PLANS_BUCKET, plan_paths)
     if thumb_paths:
         storage.remove_files(storage.THUMBNAILS_BUCKET, thumb_paths)
+    if cover_path:
+        storage.remove_files(storage.PROJECT_COVERS_BUCKET, [cover_path])
 
     await db.execute(
         delete(GuestProjectAccess).where(

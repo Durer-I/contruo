@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Loader2 } from "lucide-react";
 
@@ -10,12 +10,6 @@ import { useAuth } from "@/providers/auth-provider";
 import { hasPermission, type Role } from "@/lib/permissions";
 import type { PlanInfo, ProjectInfo, SheetInfo } from "@/types/project";
 
-/** Dedupe concurrent initial loads (e.g. React Strict Mode double mount in dev). */
-const projectBundleInflight = new Map<
-  string,
-  Promise<{ project: ProjectInfo; plans: PlanInfo[]; sheets: SheetInfo[] }>
->();
-
 import { PlanProcessingStatus } from "@/components/projects/plan-processing-status";
 import {
   ProjectTopBarRegistrar,
@@ -23,13 +17,39 @@ import {
 import { PlanViewerWorkspace } from "@/components/plan-viewer/plan-viewer-workspace";
 import { ProjectCollaborationRoom } from "@/components/collaboration/project-collaboration-room";
 
+/** Dedupe concurrent fetches per key (e.g. React Strict Mode double mount in dev). */
+function dedupePromise<T>(map: Map<string, Promise<T>>, key: string, factory: () => Promise<T>): Promise<T> {
+  let existing = map.get(key);
+  if (!existing) {
+    existing = factory();
+    map.set(key, existing);
+    void existing.finally(() => {
+      if (map.get(key) === existing) {
+        map.delete(key);
+      }
+    });
+  }
+  return existing;
+}
+
+const projectLoadInflight = new Map<string, Promise<ProjectInfo>>();
+const plansSheetsLoadInflight = new Map<
+  string,
+  Promise<{ plans: PlanInfo[]; sheets: SheetInfo[] }>
+>();
+
 export default function ProjectPage() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const projectId = params.id;
+  const rawId = params.id;
+  const projectId = Array.isArray(rawId) ? rawId[0] : rawId;
   const { user } = useAuth();
+
+  /** Latest project route id — ignore stale async completions after navigation. */
+  const activeProjectIdRef = useRef(projectId);
+  activeProjectIdRef.current = projectId;
 
   const role = (user?.role ?? "viewer") as Role;
   const canUpload = hasPermission(role, "upload_plans");
@@ -40,7 +60,9 @@ export default function ProjectPage() {
   const [plans, setPlans] = useState<PlanInfo[]>([]);
   const [sheets, setSheets] = useState<SheetInfo[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [plansSheetsError, setPlansSheetsError] = useState<string | null>(null);
+  const [projectLoading, setProjectLoading] = useState(true);
+  const [plansSheetsLoading, setPlansSheetsLoading] = useState(true);
 
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -55,49 +77,97 @@ export default function ProjectPage() {
 
   const loadAll = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
-    if (!silent) {
-      setLoading(true);
-    }
-    setLoadError(null);
-    try {
-      const fetchBundle = async () => {
-        const [p, plansResp, sheetsResp] = await Promise.all([
-          api.get<ProjectInfo>(`/api/v1/projects/${projectId}`),
-          api.get<{ plans: PlanInfo[] }>(`/api/v1/projects/${projectId}/plans`),
-          api.get<{ sheets: SheetInfo[] }>(`/api/v1/projects/${projectId}/sheets`),
-        ]);
-        return { project: p, plans: plansResp.plans, sheets: sheetsResp.sheets };
-      };
-
-      let bundle: { project: ProjectInfo; plans: PlanInfo[]; sheets: SheetInfo[] };
+    const forId = projectId;
+    if (!forId) {
       if (!silent) {
-        let inflight = projectBundleInflight.get(projectId);
-        if (!inflight) {
-          inflight = fetchBundle();
-          projectBundleInflight.set(projectId, inflight);
-          void inflight.finally(() => {
-            if (projectBundleInflight.get(projectId) === inflight) {
-              projectBundleInflight.delete(projectId);
-            }
-          });
-        }
-        bundle = await inflight;
-      } else {
-        bundle = await fetchBundle();
+        setProjectLoading(false);
+        setPlansSheetsLoading(false);
       }
+      return;
+    }
 
-      setProject(bundle.project);
-      setPlans(bundle.plans);
-      setSheets(bundle.sheets);
+    const stillHere = () => activeProjectIdRef.current === forId;
+
+    if (!silent) {
+      setLoadError(null);
+      setPlansSheetsError(null);
+      setProjectLoading(true);
+      setPlansSheetsLoading(true);
+    } else {
+      setPlansSheetsError(null);
+    }
+
+    const fail = (msg: string, phase: "project" | "plans_sheets") => {
+      if (!stillHere()) return;
+      if (!silent) {
+        setProjectLoading(false);
+        setPlansSheetsLoading(false);
+      }
+      if (phase === "project") {
+        setLoadError(msg);
+        setProject(null);
+      } else {
+        setPlansSheetsError(msg);
+      }
+    };
+
+    try {
+      if (!silent) {
+        let p: ProjectInfo;
+        try {
+          p = await dedupePromise(projectLoadInflight, forId, () =>
+            api.get<ProjectInfo>(`/api/v1/projects/${forId}`)
+          );
+        } catch (e) {
+          const msg = e instanceof ApiError ? e.message : "Failed to load project";
+          fail(msg, "project");
+          return;
+        }
+        if (!stillHere()) return;
+        setProject(p);
+        setProjectLoading(false);
+
+        try {
+          const bundle = await dedupePromise(plansSheetsLoadInflight, forId, async () => {
+            const [plansResp, sheetsResp] = await Promise.all([
+              api.get<{ plans: PlanInfo[] }>(`/api/v1/projects/${forId}/plans`),
+              api.get<{ sheets: SheetInfo[] }>(`/api/v1/projects/${forId}/sheets`),
+            ]);
+            return { plans: plansResp.plans, sheets: sheetsResp.sheets };
+          });
+          if (!stillHere()) return;
+          setPlans(bundle.plans);
+          setSheets(bundle.sheets);
+          setPlansSheetsError(null);
+        } catch (e) {
+          const msg = e instanceof ApiError ? e.message : "Failed to load plans or sheets";
+          fail(msg, "plans_sheets");
+          return;
+        }
+        if (!stillHere()) return;
+        setPlansSheetsLoading(false);
+      } else {
+        const [p, plansResp, sheetsResp] = await Promise.all([
+          api.get<ProjectInfo>(`/api/v1/projects/${forId}`),
+          api.get<{ plans: PlanInfo[] }>(`/api/v1/projects/${forId}/plans`),
+          api.get<{ sheets: SheetInfo[] }>(`/api/v1/projects/${forId}/sheets`),
+        ]);
+        if (!stillHere()) return;
+        setProject(p);
+        setPlans(plansResp.plans);
+        setSheets(sheetsResp.sheets);
+        setPlansSheetsError(null);
+      }
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : "Failed to load project";
-      setLoadError(msg);
+      if (!stillHere()) return;
+      if (!silent) {
+        setProjectLoading(false);
+        setPlansSheetsLoading(false);
+        setLoadError(msg);
+      }
       if (silent) {
         throw e instanceof Error ? e : new Error(msg);
-      }
-    } finally {
-      if (!silent) {
-        setLoading(false);
       }
     }
   }, [projectId]);
@@ -111,6 +181,16 @@ export default function ProjectPage() {
       setSheetsRefreshing(false);
     }
   }, [loadAll]);
+
+  useEffect(() => {
+    setProject(null);
+    setPlans([]);
+    setSheets([]);
+    setLoadError(null);
+    setPlansSheetsError(null);
+    setProjectLoading(true);
+    setPlansSheetsLoading(true);
+  }, [projectId]);
 
   useEffect(() => {
     void loadAll();
@@ -144,7 +224,31 @@ export default function ProjectPage() {
     [pathname, router, searchParams]
   );
 
-  const currentPlan = plans.find((p) => p.id === resolvedPlanId) ?? null;
+  const qpPlanId = searchParams.get("plan");
+  /** Prefer `?plan=` so progress appears before the plans list finishes loading after redirect. */
+  const progressPlanId = useMemo(() => {
+    if (qpPlanId && (plans.length === 0 || plans.some((p) => p.id === qpPlanId))) {
+      return qpPlanId;
+    }
+    if (resolvedPlanId && plans.some((p) => p.id === resolvedPlanId && p.status !== "ready")) {
+      return resolvedPlanId;
+    }
+    return null;
+  }, [qpPlanId, plans, resolvedPlanId]);
+
+  const showPlanProgressUi = useMemo(() => {
+    if (!progressPlanId) return false;
+    // After redirect with ?plan=, show progress while plans are still loading; otherwise
+    // wait for plans so a stale query id does not look like an active processing job.
+    if (plans.length === 0) {
+      return Boolean(qpPlanId && plansSheetsLoading);
+    }
+    const p = plans.find((x) => x.id === progressPlanId);
+    return Boolean(p && p.status !== "ready");
+  }, [progressPlanId, plans, qpPlanId, plansSheetsLoading]);
+
+  const progressPlanLabel =
+    plans.find((p) => p.id === progressPlanId)?.filename ?? pendingFile?.name ?? "Plan";
 
   const handleUpload = useCallback(async () => {
     if (!pendingFile) return;
@@ -169,14 +273,14 @@ export default function ProjectPage() {
   }, [pendingFile, projectId, selectPlan]);
 
   const handlePlanReady = useCallback(() => {
-    void loadAll();
+    void loadAll({ silent: true });
   }, [loadAll]);
 
-  if (loading) {
+  if (projectLoading && !project) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Loading project...
+        Loading project…
       </div>
     );
   }
@@ -211,16 +315,35 @@ export default function ProjectPage() {
         onConfirmUpload={handleUpload}
       />
 
-      {resolvedPlanId && currentPlan?.status !== "ready" && (
-        <div className="shrink-0 border-b border-border bg-card px-4 py-3">
-          <div className="mb-2 text-sm font-medium">
-            {pendingFile?.name ?? currentPlan?.filename ?? "Plan"}
-          </div>
-          <PlanProcessingStatus planId={resolvedPlanId} onReady={handlePlanReady} />
+      {plansSheetsError && !plansSheetsLoading && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-xs text-destructive">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span className="min-w-0">{plansSheetsError}</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="ml-auto h-7 shrink-0 text-xs"
+            onClick={() => void loadAll()}
+          >
+            Retry
+          </Button>
         </div>
       )}
 
-      {hasSheets && resolvedPlanId ? (
+      {showPlanProgressUi && progressPlanId && (
+        <div className="shrink-0 border-b border-border bg-card px-4 py-3">
+          <div className="mb-2 text-sm font-medium">{progressPlanLabel}</div>
+          <PlanProcessingStatus planId={progressPlanId} onReady={handlePlanReady} />
+        </div>
+      )}
+
+      {plansSheetsLoading ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-sm text-muted-foreground">
+          <Loader2 className="h-8 w-8 animate-spin" aria-hidden />
+          <p>Loading viewer data…</p>
+        </div>
+      ) : hasSheets && resolvedPlanId ? (
         <ProjectCollaborationRoom orgId={project.org_id} projectId={projectId}>
           <PlanViewerWorkspace
             key={projectId}

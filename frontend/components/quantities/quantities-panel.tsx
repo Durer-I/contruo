@@ -10,8 +10,10 @@ import {
   Trash2,
 } from "lucide-react";
 import {
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -49,6 +51,11 @@ import type {
   MeasurementInfo,
 } from "@/types/measurement";
 import type { SheetInfo } from "@/types/project";
+
+export type QuantitiesPanelHandle = {
+  expandAll: () => void;
+  collapseAll: () => void;
+};
 
 type FlatRow =
   | { kind: "condition"; id: string; condition: ConditionInfo; depth: 0 }
@@ -117,20 +124,24 @@ export interface QuantitiesPanelProps {
 
 const ROW_H = 28;
 
-export function QuantitiesPanel({
-  measurements,
-  conditions,
-  sheets,
-  loading,
-  activeSheetId,
-  selectedIds,
-  onMeasurementSelect,
-  onNavigateToMeasurement,
-  onUpdateMeasurement,
-  onDeleteMeasurement,
-  onReassignCondition,
-  canEdit,
-}: QuantitiesPanelProps) {
+export const QuantitiesPanel = forwardRef<QuantitiesPanelHandle, QuantitiesPanelProps>(
+  function QuantitiesPanel(
+    {
+      measurements,
+      conditions,
+      sheets,
+      loading,
+      activeSheetId,
+      selectedIds,
+      onMeasurementSelect,
+      onNavigateToMeasurement,
+      onUpdateMeasurement,
+      onDeleteMeasurement,
+      onReassignCondition,
+      canEdit,
+    },
+    ref
+  ) {
   const sheetById = useMemo(() => new Map(sheets.map((s) => [s.id, s])), [sheets]);
 
   const sortedConditions = useMemo(() => {
@@ -235,14 +246,7 @@ export function QuantitiesPanel({
       }
     }
     return out;
-  }, [
-    measurements,
-    sortedConditions,
-    sheetById,
-    expandedConds,
-    expandedSheets,
-    expandedMeas,
-  ]);
+  }, [measurements, sortedConditions, sheetById, expandedConds, expandedSheets, expandedMeas]);
 
   const rowIndexByMeasurementId = useMemo(() => {
     const map = new Map<string, number>();
@@ -300,6 +304,42 @@ export function QuantitiesPanel({
       return next;
     });
   }, []);
+
+  const expandAll = useCallback(() => {
+    const condIds = new Set<string>();
+    const sheetKeys = new Set<string>();
+    for (const cond of sortedConditions) {
+      const ms = measurements.filter((m) => m.condition_id === cond.id);
+      if (ms.length === 0) continue;
+      condIds.add(cond.id);
+      for (const sid of new Set(ms.map((m) => m.sheet_id))) {
+        sheetKeys.add(`${cond.id}:${sid}`);
+      }
+    }
+    const measIds = new Set(
+      measurements
+        .filter((m) => (m.derived_quantities?.length ?? 0) > 0)
+        .map((m) => m.id)
+    );
+    setExpandedConds(condIds);
+    setExpandedSheets(sheetKeys);
+    setExpandedMeas(measIds);
+  }, [sortedConditions, measurements]);
+
+  const collapseAll = useCallback(() => {
+    setExpandedConds(new Set());
+    setExpandedSheets(new Set());
+    setExpandedMeas(new Set());
+  }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      expandAll,
+      collapseAll,
+    }),
+    [expandAll, collapseAll]
+  );
 
   const startEdit = useCallback((m: MeasurementInfo) => {
     if (!canEdit) return;
@@ -618,7 +658,7 @@ export function QuantitiesPanel({
                         */}
                       </div>
                     )}
-                    <span className="w-7 shrink-0 text-[9px] text-muted-foreground">{c.unit}</span>
+                    {/* <span className="w-7 shrink-0 text-[9px] text-muted-foreground">{c.unit}</span> */}
                   </div>
                 );
               }
@@ -773,7 +813,9 @@ export function QuantitiesPanel({
       </Dialog>
     </TooltipProvider>
   );
-}
+});
+
+QuantitiesPanel.displayName = "QuantitiesPanel";
 
 function overriddenLabel(m: MeasurementInfo): string {
   return m.override_value != null ? "override" : "measured";

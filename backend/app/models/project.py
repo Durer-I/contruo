@@ -22,6 +22,8 @@ class Project(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Supabase Storage path in ``project-covers`` bucket (``org_id/projects/...``).
+    cover_image_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="active"
     )

@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { api } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
 import { syncSupabaseSessionCookies } from "@/lib/sync-supabase-session";
@@ -91,9 +92,8 @@ export default function AcceptInvitePage() {
             <label htmlFor="password" className="text-sm font-medium">
               Password
             </label>
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="At least 8 characters"
@@ -105,9 +105,8 @@ export default function AcceptInvitePage() {
             <label htmlFor="confirm" className="text-sm font-medium">
               Confirm Password
             </label>
-            <Input
+            <PasswordInput
               id="confirm"
-              type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required

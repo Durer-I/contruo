@@ -9,6 +9,8 @@ export interface ProjectInfo {
   created_by: string;
   created_at: string;
   updated_at: string;
+  /** Signed URL for dashboard / project list card; null if no cover uploaded. */
+  cover_image_url: string | null;
   sheet_count: number;
   member_count: number;
 }
@@ -20,6 +22,9 @@ export interface PlanDocumentUrlResponse {
 
 export type PlanStatus = "processing" | "ready" | "error";
 
+/** Celery PDF task phase when status is `processing` (see backend `pdf_processing`). */
+export type PlanProcessingSubstep = "extract" | "persist";
+
 export interface PlanInfo {
   id: string;
   project_id: string;
@@ -28,6 +33,8 @@ export interface PlanInfo {
   page_count: number | null;
   status: PlanStatus;
   processed_pages: number;
+  /** Present while a plan PDF is being processed in the worker. */
+  processing_substep?: PlanProcessingSubstep | null;
   error_message: string | null;
   uploaded_by: string;
   created_at: string;
@@ -38,6 +45,11 @@ export type VectorSnapSegment = { x1: number; y1: number; x2: number; y2: number
 
 export interface SheetVectorSnapResponse {
   segments: VectorSnapSegment[] | null;
+}
+
+/** Response from ``POST /api/v1/projects/{id}/sheets/thumbnail-urls``. */
+export interface SheetThumbnailUrlsResponse {
+  urls: Record<string, string | null>;
 }
 
 export interface SheetInfo {
@@ -52,6 +64,7 @@ export interface SheetInfo {
   scale_source: string | null;
   width_px: number | null;
   height_px: number | null;
+  /** Omitted on project sheet list; use thumbnail-urls batch or PATCH scale. */
   thumbnail_url: string | null;
   created_at: string;
   /** From project sheet list; full segments loaded lazily per active sheet. */

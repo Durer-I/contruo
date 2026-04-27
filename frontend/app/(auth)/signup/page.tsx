@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Loader2 } from "lucide-react";
 
 export default function SignupPage() {
@@ -94,9 +95,8 @@ export default function SignupPage() {
           <label htmlFor="password" className="text-sm font-medium">
             Password
           </label>
-          <Input
+          <PasswordInput
             id="password"
-            type="password"
             placeholder="Minimum 8 characters"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
-import { Loader2, MoreVertical, Plus, Search } from "lucide-react";
+import { Loader2, MoreVertical, Pencil, Plus, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DeleteProjectDialog } from "@/components/projects/delete-project-dialog";
+import { EditProjectDialog } from "@/components/projects/edit-project-dialog";
 import { NewProjectDialog } from "@/components/projects/new-project-dialog";
+import { ProjectCard } from "@/components/projects/project-card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,14 +17,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useProjects } from "@/hooks/use-projects";
 import { useAuth } from "@/providers/auth-provider";
-import { formatRelativeTime } from "@/lib/utils";
 import { hasPermission, type Role } from "@/lib/permissions";
+import type { ProjectInfo } from "@/types/project";
 
 export default function ProjectsPage() {
   const { user } = useAuth();
-  const { projects, loading, error, refresh } = useProjects();
+  const { projects, loading, error, refresh, mergeProject } = useProjects();
   const [query, setQuery] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [editTarget, setEditTarget] = useState<ProjectInfo | null>(null);
 
   const role = (user?.role ?? "viewer") as Role;
   const canCreate = hasPermission(role, "create_projects");
@@ -82,57 +84,62 @@ export default function ProjectsPage() {
       {filtered.length > 0 && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((project) => (
-            <div
+            <ProjectCard
               key={project.id}
-              className="group relative rounded-md border border-border bg-card transition-colors hover:border-primary/50 hover:bg-surface-overlay"
-            >
-              <Link
-                href={`/project/${project.id}`}
-                className="block p-4 pr-11 transition-colors"
-              >
-                <h3 className="font-medium">{project.name}</h3>
-                {project.description && (
-                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                    {project.description}
-                  </p>
-                )}
-                <div className="mt-3 flex flex-col gap-1 text-sm text-muted-foreground">
-                  <span>
-                    {project.sheet_count} sheet{project.sheet_count === 1 ? "" : "s"}
-                  </span>
-                  <span>Updated {formatRelativeTime(project.updated_at)}</span>
-                  {/* <span>
-                    {project.member_count} member{project.member_count === 1 ? "" : "s"}
-                  </span> */}
-                </div>
-              </Link>
-              {canCreate && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    type="button"
-                    className="absolute right-1 top-1 z-10 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-surface-overlay hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
-                    aria-label="Project actions"
-                    onPointerDown={(e) => e.stopPropagation()}
-                  >
-                    <MoreVertical className="h-4 w-4" aria-hidden />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem
-                      variant="destructive"
-                      className="cursor-pointer" 
-                      onClick={() =>
-                        setDeleteTarget({ id: project.id, name: project.name })
-                      }
+              project={project}
+              href={`/project/${project.id}`}
+              menu={
+                canCreate ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      type="button"
+                      className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-md border border-border/80 bg-background/90 text-muted-foreground shadow-sm outline-none backdrop-blur-sm hover:bg-surface-overlay hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
+                      aria-label="Project actions"
+                      onPointerDown={(e) => e.stopPropagation()}
                     >
-                      Delete project
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </div>
+                      <MoreVertical className="h-4 w-4" aria-hidden />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem
+                        className="cursor-pointer"
+                        onClick={() => setEditTarget(project)}
+                      >
+                        <Pencil className="size-4 shrink-0" aria-hidden />
+                        Edit project…
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        className="cursor-pointer"
+                        onClick={() =>
+                          setDeleteTarget({ id: project.id, name: project.name })
+                        }
+                      >
+                        Delete project
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : undefined
+              }
+            />
           ))}
         </div>
       )}
+
+      <EditProjectDialog
+        project={editTarget}
+        onClose={() => setEditTarget(null)}
+        onSaved={(p) => {
+          mergeProject(p.id, {
+            name: p.name,
+            description: p.description,
+            cover_image_url: p.cover_image_url ?? null,
+            updated_at: p.updated_at,
+            sheet_count: p.sheet_count,
+            member_count: p.member_count,
+          });
+          void refresh();
+        }}
+      />
 
       <DeleteProjectDialog
         project={deleteTarget}

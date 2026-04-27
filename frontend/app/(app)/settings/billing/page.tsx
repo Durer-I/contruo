@@ -250,7 +250,7 @@ export default function BillingPage() {
         <div>
           <h1 className="text-xl font-semibold">Billing</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            DodoPayments subscription, seats, and invoices.
+            Manage your Subscription and Seats.
           </p>
         </div>
 
@@ -388,7 +388,10 @@ export default function BillingPage() {
           )}
         </section>
 
-        <section className="rounded-lg border border-border bg-surface p-5">
+
+          {/* COMMENTED OUT THE INVOICE SECTION FOR NOW. WILL BE IMPLEMENTED IN THE FUTURE */}
+
+        {/* <section className="rounded-lg border border-border bg-surface p-5">
           <h2 className="text-sm font-medium text-foreground">Invoices</h2>
           {invoices.invoices.length === 0 ? (
             <p className="mt-3 text-sm text-muted-foreground">No invoices yet.</p>
@@ -422,7 +425,8 @@ export default function BillingPage() {
               ))}
             </ul>
           )}
-        </section>
+        </section> */}
+      
       </div>
 
       <Dialog

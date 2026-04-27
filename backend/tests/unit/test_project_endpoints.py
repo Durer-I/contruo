@@ -69,6 +69,7 @@ async def test_list_projects_returns_array():
             "created_by": ctx.user_id,
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
+            "cover_image_url": None,
             "sheet_count": 3,
             "member_count": 2,
         }
@@ -103,6 +104,7 @@ async def test_create_project_succeeds_for_admin():
     project.created_by = ctx.user_id
     project.created_at = datetime.now(timezone.utc)
     project.updated_at = datetime.now(timezone.utc)
+    project.cover_image_path = None
 
     with patch(
         "app.services.project_service.create_project",
@@ -116,6 +118,46 @@ async def test_create_project_succeeds_for_admin():
             )
             assert r.status_code == 201
             assert r.json()["name"] == "New Project"
+            assert r.json()["cover_image_url"] is None
+
+
+@pytest.mark.anyio
+async def test_upload_project_cover_returns_project():
+    ctx = _ctx("admin")
+    _override_auth(ctx)
+    _override_db(_mock_db())
+
+    pid = uuid.uuid4()
+    project = MagicMock()
+    project.id = pid
+    project.org_id = ctx.org_id
+    project.name = "P"
+    project.description = None
+    project.status = "active"
+    project.created_by = ctx.user_id
+    project.created_at = datetime.now(timezone.utc)
+    project.updated_at = datetime.now(timezone.utc)
+    project.cover_image_path = f"{ctx.org_id}/projects/{pid}/cover.jpg"
+
+    with (
+        patch(
+            "app.services.project_service.upload_project_cover",
+            new_callable=AsyncMock,
+            return_value=project,
+        ),
+        patch(
+            "app.services.project_service.project_cover_signed_url",
+            return_value="https://signed.example/cover.jpg",
+        ),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            r = await ac.post(
+                f"/api/v1/projects/{pid}/cover",
+                files={"file": ("cover.jpg", b"\xff\xd8\xff", "image/jpeg")},
+            )
+            assert r.status_code == 200
+            body = r.json()
+            assert body["cover_image_url"] == "https://signed.example/cover.jpg"
 
 
 @pytest.mark.anyio
@@ -249,7 +291,7 @@ async def test_get_plan_document_url_returns_signed_url():
 # ── Sheets listing ───────────────────────────────────────────────────
 
 @pytest.mark.anyio
-async def test_list_sheets_returns_thumbnails():
+async def test_list_sheets_omits_signed_thumbnail_urls():
     ctx = _ctx("viewer")
     _override_auth(ctx)
     _override_db(_mock_db())
@@ -268,24 +310,19 @@ async def test_list_sheets_returns_thumbnails():
     sheet.height_px = 1584
     sheet.thumbnail_path = "org/plans/plan/thumbs/page-1.png"
     sheet.created_at = datetime.now(timezone.utc)
+    sheet.vector_snap_segment_count = 0
 
-    with (
-        patch(
-            "app.services.plan_service.list_project_sheets",
-            new_callable=AsyncMock,
-            return_value=[sheet],
-        ),
-        patch(
-            "app.services.plan_service.sheet_thumbnail_url",
-            return_value="https://signed.example/thumb.png",
-        ),
+    with patch(
+        "app.services.plan_service.list_project_sheets",
+        new_callable=AsyncMock,
+        return_value=[sheet],
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             r = await ac.get(f"/api/v1/projects/{uuid.uuid4()}/sheets")
             assert r.status_code == 200
             body = r.json()
             assert len(body["sheets"]) == 1
-            assert body["sheets"][0]["thumbnail_url"] == "https://signed.example/thumb.png"
+            assert body["sheets"][0]["thumbnail_url"] is None
             assert body["sheets"][0]["sheet_name"] == "A1.01 - First Floor Plan"
             assert body["sheets"][0]["vector_snap_segment_count"] == 0
             assert "vector_snap_segments" not in body["sheets"][0]
@@ -311,18 +348,12 @@ async def test_list_sheets_includes_segment_count_without_payload():
     sheet.height_px = 100
     sheet.thumbnail_path = "t.png"
     sheet.created_at = datetime.now(timezone.utc)
-    sheet.vector_snap_segments = [{"x1": 0, "y1": 0, "x2": 1, "y2": 1}] * 3
+    sheet.vector_snap_segment_count = 3
 
-    with (
-        patch(
-            "app.services.plan_service.list_project_sheets",
-            new_callable=AsyncMock,
-            return_value=[sheet],
-        ),
-        patch(
-            "app.services.plan_service.sheet_thumbnail_url",
-            return_value="https://signed.example/thumb.png",
-        ),
+    with patch(
+        "app.services.plan_service.list_project_sheets",
+        new_callable=AsyncMock,
+        return_value=[sheet],
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             r = await ac.get(f"/api/v1/projects/{uuid.uuid4()}/sheets")
@@ -330,6 +361,30 @@ async def test_list_sheets_includes_segment_count_without_payload():
             body = r.json()
             assert body["sheets"][0]["vector_snap_segment_count"] == 3
             assert "vector_snap_segments" not in body["sheets"][0]
+
+
+@pytest.mark.anyio
+async def test_post_sheet_thumbnail_urls_returns_map():
+    ctx = _ctx("viewer")
+    _override_auth(ctx)
+    _override_db(_mock_db())
+
+    sid = uuid.uuid4()
+    pid = uuid.uuid4()
+    urls = {str(sid): "https://signed.example/thumb.png"}
+
+    with patch(
+        "app.services.plan_service.resolve_thumbnail_urls_for_sheets",
+        new_callable=AsyncMock,
+        return_value=urls,
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            r = await ac.post(
+                f"/api/v1/projects/{pid}/sheets/thumbnail-urls",
+                json={"sheet_ids": [str(sid)]},
+            )
+            assert r.status_code == 200
+            assert r.json() == {"urls": urls}
 
 
 # ── Project delete ───────────────────────────────────────────────────

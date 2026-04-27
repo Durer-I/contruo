@@ -12,6 +12,8 @@ class PlanResponse(BaseModel):
     page_count: int | None
     status: str
     processed_pages: int
+    #: ``extract`` | ``persist`` while processing; null when not applicable.
+    processing_substep: str | None = None
     error_message: str | None
     uploaded_by: uuid.UUID
     created_at: datetime
@@ -54,9 +56,22 @@ class SheetListItemResponse(BaseModel):
     scale_source: str | None = None
     width_px: int | None
     height_px: int | None
+    #: Signed URL omitted on list; use ``POST .../sheets/thumbnail-urls`` (or PATCH scale response).
     thumbnail_url: str | None = None
     created_at: datetime
     vector_snap_segment_count: int = 0
+
+
+class SheetThumbnailUrlsRequest(BaseModel):
+    """Batch-resolve signed thumbnail URLs for sheets in a project."""
+
+    sheet_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=100)
+
+
+class SheetThumbnailUrlsResponse(BaseModel):
+    """Map sheet id (string) to signed URL or null when no thumbnail object."""
+
+    urls: dict[str, str | None]
 
 
 class SheetVectorSnapResponse(BaseModel):

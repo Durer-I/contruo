@@ -10,6 +10,10 @@ import {
 } from "react-resizable-panels";
 import {
   AlertTriangle,
+  CopyMinus,
+  CopyPlus,
+  LayoutGrid,
+  List,
   Loader2,
   Maximize2,
   Minus,
@@ -18,6 +22,17 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectItem,
+  SelectList,
+  SelectPopup,
+  SelectPortal,
+  SelectPositioner,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator as ToolbarSeparator } from "@/components/ui/separator";
 import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type {
@@ -25,6 +40,7 @@ import type {
   PlanInfo,
   ProjectSearchResponse,
   SheetInfo,
+  SheetThumbnailUrlsResponse,
   SheetVectorSnapResponse,
 } from "@/types/project";
 import { useTakeoffToolbarSlot } from "@/providers/takeoff-toolbar-slot-provider";
@@ -35,9 +51,15 @@ import { CollaborationCursorsLayer } from "@/components/collaboration/collaborat
 import { useRemoteMeasurementLockMap } from "@/hooks/use-remote-measurement-locks";
 import type { CollaborationBroadcastEvent } from "@/lib/collaboration-events";
 import { useConditions } from "@/hooks/use-conditions";
-import { ConditionManagerPanel } from "@/components/conditions/condition-manager-panel";
+import {
+  ConditionManagerPanel,
+  type ConditionManagerPanelHandle,
+} from "@/components/conditions/condition-manager-panel";
 import { ExportDialog } from "@/components/export/export-dialog";
-import { QuantitiesPanel } from "@/components/quantities/quantities-panel";
+import {
+  QuantitiesPanel,
+  type QuantitiesPanelHandle,
+} from "@/components/quantities/quantities-panel";
 import { getMeasurementPdfBounds } from "@/lib/measurement-bounds";
 
 import {
@@ -101,6 +123,8 @@ const PANEL_IDS = ["sheet-index", "viewer", "quantities"] as const;
 
 type ScaleFlowStep = "idle" | "intro" | "picking" | "input";
 
+type SheetStripMode = "list" | "thumbs";
+
 export function PlanViewerWorkspace({
   projectId,
   projectName,
@@ -115,6 +139,7 @@ export function PlanViewerWorkspace({
   canExport = false,
 }: PlanViewerWorkspaceProps) {
   const canvasRef = useRef<PlanPdfCanvasHandle>(null);
+  const sheetStripScrollRef = useRef<HTMLDivElement>(null);
   const skipSheetResetOnPlanChangeRef = useRef(false);
   const { setTakeoffSlot } = useTakeoffToolbarSlot();
   const {
@@ -229,6 +254,74 @@ export function PlanViewerWorkspace({
     [planSheets, activeSheetId]
   );
 
+  const planSheetsIdKey = useMemo(
+    () => `${activePlanId}:${planSheets.map((s) => s.id).join(",")}`,
+    [activePlanId, planSheets]
+  );
+
+  const [sheetStripMode, setSheetStripMode] = useState<SheetStripMode>("list");
+  const [sheetThumbUrls, setSheetThumbUrls] = useState<Record<string, string | null>>({});
+  const [sheetThumbsLoading, setSheetThumbsLoading] = useState(false);
+  const sheetThumbsLoadedForKeyRef = useRef<string>("");
+
+  /** Keep the active sheet visible when it changes (e.g. quantities “navigate to” another page). */
+  useEffect(() => {
+    if (!activeSheetId || planSheets.length === 0) return;
+    const root = sheetStripScrollRef.current;
+    if (!root) return;
+    const row = root.querySelector<HTMLElement>(
+      `[data-sheet-strip-item="${CSS.escape(activeSheetId)}"]`
+    );
+    if (!row) return;
+    const id = requestAnimationFrame(() => {
+      row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [activeSheetId, planSheetsIdKey, planSheets.length, sheetStripMode]);
+
+  useEffect(() => {
+    setSheetThumbUrls({});
+    sheetThumbsLoadedForKeyRef.current = "";
+  }, [planSheetsIdKey]);
+
+  useEffect(() => {
+    if (sheetStripMode !== "thumbs" || planSheets.length === 0) return;
+    const loadKey = planSheetsIdKey;
+    if (sheetThumbsLoadedForKeyRef.current === loadKey) return;
+
+    let cancelled = false;
+    const run = async () => {
+      const needsFetch = planSheets.filter((s) => !s.thumbnail_url).map((s) => s.id);
+      if (needsFetch.length === 0) {
+        sheetThumbsLoadedForKeyRef.current = loadKey;
+        setSheetThumbsLoading(false);
+        return;
+      }
+      setSheetThumbsLoading(true);
+      const BATCH = 100;
+      try {
+        for (let i = 0; i < needsFetch.length && !cancelled; i += BATCH) {
+          const chunk = needsFetch.slice(i, i + BATCH);
+          const r = await api.post<SheetThumbnailUrlsResponse>(
+            `/api/v1/projects/${projectId}/sheets/thumbnail-urls`,
+            { sheet_ids: chunk }
+          );
+          if (cancelled) return;
+          setSheetThumbUrls((prev) => ({ ...prev, ...r.urls }));
+        }
+        if (!cancelled) sheetThumbsLoadedForKeyRef.current = loadKey;
+      } catch {
+        if (!cancelled) setSheetThumbUrls({});
+      } finally {
+        if (!cancelled) setSheetThumbsLoading(false);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [sheetStripMode, planSheetsIdKey, projectId, planSheets]);
+
   useEffect(() => {
     void loadConditions();
   }, [loadConditions]);
@@ -269,6 +362,8 @@ export function PlanViewerWorkspace({
   const [measurementUndoStack, setMeasurementUndoStack] = useState<string[]>([]);
   const [projectMeasurements, setProjectMeasurements] = useState<MeasurementInfo[]>([]);
   const [rightPanelTab, setRightPanelTab] = useState<"quantities" | "conditions">("quantities");
+  const quantitiesPanelRef = useRef<QuantitiesPanelHandle>(null);
+  const conditionPanelRef = useRef<ConditionManagerPanelHandle>(null);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
   const [measurementRedoStack, setMeasurementRedoStack] = useState<MeasurementRedoSnapshot[]>([]);
@@ -497,6 +592,23 @@ export function PlanViewerWorkspace({
   const vpKey = activeSheet
     ? viewportStorageKey(projectId, activeSheet.id)
     : null;
+
+  useEffect(() => {
+    // #region agent log
+    fetch("http://127.0.0.1:7319/ingest/5d4687f9-e6fb-4986-8f29-165e267f26bf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3f5067" },
+      body: JSON.stringify({
+        sessionId: "3f5067",
+        location: "plan-viewer-workspace.tsx:activeSheet",
+        message: "active sheet / vpKey",
+        data: { activeSheetId, vpKey },
+        hypothesisId: "H2",
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }, [activeSheetId, vpKey]);
 
   const calibrationMode =
     canEditMeasurements && activeTool === "scale" && scaleStep === "picking";
@@ -1501,6 +1613,17 @@ export function PlanViewerWorkspace({
         return;
       }
 
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key === "0") {
+        e.preventDefault();
+        canvasRef.current?.fitPage();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "2" || e.code === "Numpad2")) {
+        e.preventDefault();
+        canvasRef.current?.fitWidth();
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
         setSearchPanelOpen((o) => !o);
@@ -1767,17 +1890,50 @@ export function PlanViewerWorkspace({
       >
         <Panel
           id={PANEL_IDS[0]}
-          defaultSize="15%"
+          defaultSize="10%"
           minSize="1px"
           maxSize="100%"
           className="flex min-h-0 min-w-0 flex-col border-r border-border bg-surface"
         >
-          <div className="border-b border-border px-2 py-1.5">
+          <div className="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Sheets ({planSheets.length})
             </span>
+            <div className="flex shrink-0 items-center gap-0.5">
+              {sheetThumbsLoading ? (
+                <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-hidden />
+              ) : null}
+              <div
+                className="flex rounded-md border border-border bg-background p-0.5"
+                role="group"
+                aria-label="Sheet list layout"
+              >
+                <Button
+                  type="button"
+                  variant={sheetStripMode === "list" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-[10px]"
+                  onClick={() => setSheetStripMode("list")}
+                  aria-pressed={sheetStripMode === "list"}
+                >
+                  <List className="size-3.5 shrink-0" aria-hidden />
+                  List
+                </Button>
+                <Button
+                  type="button"
+                  variant={sheetStripMode === "thumbs" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-[10px]"
+                  onClick={() => setSheetStripMode("thumbs")}
+                  aria-pressed={sheetStripMode === "thumbs"}
+                >
+                  <LayoutGrid className="size-3.5 shrink-0" aria-hidden />
+                  Thumbs
+                </Button>
+              </div>
+            </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto p-2">
+          <div ref={sheetStripScrollRef} className="min-h-0 flex-1 overflow-auto p-2">
             {planSheets.length === 0 ? (
               <p className="p-2 text-xs text-muted-foreground">
                 {plans.some((p) => p.id === activePlanId)
@@ -1789,42 +1945,63 @@ export function PlanViewerWorkspace({
                 {planSheets.map((sheet) => {
                   const isActive = sheet.id === activeSheetId;
                   const scaleOk = sheet.scale_value != null;
+                  const thumbSrc =
+                    sheet.thumbnail_url ?? sheetThumbUrls[sheet.id] ?? null;
+                  const scaleLine = `${scaleOk
+                    ? sheet.scale_label ??
+                      `${sheet.scale_value?.toPrecision(3)} ${sheet.scale_unit}/pt`
+                    : "Not calibrated"}${sheet.scale_source === "auto" ? " · Auto" : ""}`;
+                  const title = sheet.sheet_name ?? `Page ${sheet.page_number}`;
                   return (
-                    <li key={sheet.id}>
+                    <li key={sheet.id} data-sheet-strip-item={sheet.id}>
                       <button
                         type="button"
                         onClick={() => setUserSheetId(sheet.id)}
                         className={cn(
-                          "flex w-full flex-col items-start gap-1 rounded-md border p-2 text-left transition-colors",
+                          "flex w-full rounded-md border p-2 text-left transition-colors",
+                          sheetStripMode === "list"
+                            ? "flex-row items-center gap-2"
+                            : "flex-col items-start gap-1",
                           isActive
                             ? "border-primary bg-primary/5 ring-1 ring-primary/30"
                             : "border-transparent bg-card hover:border-primary/40 hover:bg-surface-overlay"
                         )}
                       >
-                        {sheet.thumbnail_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- signed remote URL
-                          <img
-                            src={sheet.thumbnail_url}
-                            alt=""
-                            className="aspect-[4/3] w-full rounded-sm border border-border object-cover"
-                            loading={isActive ? "eager" : "lazy"}
-                            fetchPriority={isActive ? "high" : "low"}
-                          />
+                        {sheetStripMode === "thumbs" ? (
+                          thumbSrc ? (
+                            // eslint-disable-next-line @next/next/no-img-element -- signed remote URL
+                            <img
+                              src={thumbSrc}
+                              alt=""
+                              className="aspect-[4/3] w-full rounded-sm border border-border object-cover"
+                              loading={isActive ? "eager" : "lazy"}
+                              fetchPriority={isActive ? "high" : "low"}
+                            />
+                          ) : (
+                            <div className="flex aspect-[4/3] w-full items-center justify-center rounded-sm border border-border bg-background text-[10px] text-muted-foreground">
+                              {sheetThumbsLoading ? (
+                                <Loader2 className="size-5 animate-spin opacity-60" aria-hidden />
+                              ) : (
+                                sheet.page_number
+                              )}
+                            </div>
+                          )
                         ) : (
-                          <div className="flex aspect-[4/3] w-full items-center justify-center rounded-sm border border-border bg-background text-[10px] text-muted-foreground">
+                          <div className="flex h-10 w-8 shrink-0 items-center justify-center rounded-sm border border-border bg-background text-xs font-medium text-muted-foreground">
                             {sheet.page_number}
                           </div>
                         )}
-                        <span className="line-clamp-2 w-full text-[11px] font-medium leading-tight">
-                          {sheet.sheet_name ?? `Page ${sheet.page_number}`}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {scaleOk
-                            ? sheet.scale_label ??
-                              `${sheet.scale_value?.toPrecision(3)} ${sheet.scale_unit}/pt`
-                            : "Not calibrated"}
-                          {sheet.scale_source === "auto" ? " · Auto" : ""}
-                        </span>
+                        <div
+                          className={cn(
+                            "min-w-0",
+                            sheetStripMode === "list" ? "flex flex-1 flex-col gap-0.5" : "w-full"
+                          )}
+                        >
+                          <span className="line-clamp-2 w-full text-[11px] font-medium leading-tight">
+                            {title}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">{scaleLine}</span>
+                        </div>
                       </button>
                     </li>
                   );
@@ -1843,7 +2020,7 @@ export function PlanViewerWorkspace({
 
         <Panel
           id={PANEL_IDS[1]}
-          defaultSize="70%"
+          defaultSize="80%"
           minSize="1px"
           maxSize="100%"
           className="relative flex min-h-0 min-w-0 flex-col bg-background"
@@ -1876,7 +2053,7 @@ export function PlanViewerWorkspace({
                 variant="ghost"
                 size="sm"
                 className="h-7 px-2 text-xs"
-                title="Fit width"
+                title="Fit width (Ctrl+2)"
                 onClick={() => canvasRef.current?.fitWidth()}
               >
                 <StretchHorizontal className="mr-1 h-3.5 w-3.5" />
@@ -1887,7 +2064,7 @@ export function PlanViewerWorkspace({
                 variant="ghost"
                 size="sm"
                 className="h-7 px-2 text-xs"
-                title="Fit page"
+                title="Fit page (Ctrl+0)"
                 onClick={() => canvasRef.current?.fitPage()}
               >
                 <Maximize2 className="mr-1 h-3.5 w-3.5" />
@@ -2138,7 +2315,7 @@ export function PlanViewerWorkspace({
             )}
             <span className="mx-2 text-border">|</span>
             <span className="hidden sm:inline">
-              Wheel zoom · Middle-click or Space+drag pan · [ ] sheets · Ctrl+F find
+              Wheel zoom · Middle-click or Space+drag pan · [ ] sheets · Ctrl+0 page · Ctrl+2 width · Ctrl+F find
             </span>
           </div>
         </Panel>
@@ -2152,36 +2329,86 @@ export function PlanViewerWorkspace({
 
         <Panel
           id={PANEL_IDS[2]}
-          defaultSize="15%"
+          defaultSize="10%"
           minSize="1px"
           maxSize="100%"
           className="flex min-h-0 min-w-0 flex-col border-l border-border bg-surface"
         >
-          <div className="flex shrink-0 border-b border-border">
-            <button
-              type="button"
-              onClick={() => setRightPanelTab("quantities")}
-              className={cn(
-                "flex-1 px-2 py-1.5 text-[11px] font-medium transition-colors",
-                rightPanelTab === "quantities"
-                  ? "border-b-2 border-primary bg-primary/5 text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-muted/20 px-2 py-1">
+            <Select
+              value={rightPanelTab}
+              onValueChange={(v) => setRightPanelTab(v as "quantities" | "conditions")}
+              items={{
+                quantities: "Quantities",
+                conditions: "Conditions",
+              }}
             >
-              Quantities
-            </button>
-            <button
-              type="button"
-              onClick={() => setRightPanelTab("conditions")}
-              className={cn(
-                "flex-1 px-2 py-1.5 text-[11px] font-medium transition-colors",
-                rightPanelTab === "conditions"
-                  ? "border-b-2 border-primary bg-primary/5 text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Conditions
-            </button>
+              <SelectTrigger
+                size="sm"
+                variant="bare"
+                className="min-w-0 flex-1 max-w-[200px]"
+                aria-label="Panel"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectPortal>
+                <SelectPositioner align="start" sideOffset={4}>
+                  <SelectPopup>
+                    <SelectList>
+                      <SelectItem value="quantities">Quantities</SelectItem>
+                      <SelectItem value="conditions">Conditions</SelectItem>
+                    </SelectList>
+                  </SelectPopup>
+                </SelectPositioner>
+              </SelectPortal>
+            </Select>
+            {rightPanelTab === "quantities" ? (
+              <div className="flex shrink-0 items-center gap-0.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-[10px]"
+                  title="Expand all"
+                  onClick={() => quantitiesPanelRef.current?.expandAll()}
+                >
+                  <CopyPlus className="h-4 w-4" />
+                </Button>
+                <ToolbarSeparator
+                  orientation="vertical"
+                  className="mx-0.5 data-vertical:!w-0.5"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-[10px]"
+                  title="Collapse all"
+                  onClick={() => quantitiesPanelRef.current?.collapseAll()}
+                >
+                  <CopyMinus className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : rightPanelTab === "conditions" ? (
+              <div className="flex shrink-0 items-center gap-1.5">
+                {/* <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Conditions
+                </span> */}
+                {canManageConditions ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1 px-2 text-[10px]"
+                    title="New condition"
+                    onClick={() => conditionPanelRef.current?.startNew()}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    New
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           {conditionsLoading ? (
             <div className="flex flex-1 items-center justify-center gap-2 p-4 text-xs text-muted-foreground">
@@ -2192,6 +2419,7 @@ export function PlanViewerWorkspace({
             <>
               {/* FUTURE: Linear deductions draw tool — pass onStartDeductionEdit to QuantitiesPanel when re-enabled (roadmap: deferred "Linear deductions (draw tool)"). */}
               <QuantitiesPanel
+                ref={quantitiesPanelRef}
                 measurements={projectMeasurements}
                 conditions={conditions}
                 sheets={planSheets}
@@ -2208,6 +2436,7 @@ export function PlanViewerWorkspace({
             </>
           ) : (
             <ConditionManagerPanel
+              ref={conditionPanelRef}
               projectId={projectId}
               conditions={conditions}
               activeConditionId={activeConditionId}

@@ -16,8 +16,8 @@ export function conditionsMatchingTakeoffTool(
 
 /** Primary units offered in the UI for each measurement type (matches backend quantity helpers). */
 export const UNITS_BY_MEASUREMENT_TYPE: Record<MeasurementType, readonly string[]> = {
-  linear: ["LF", "FT", "m", "LS"],
-  area: ["SF", "SY", "m²"],
+  linear: ["LF", "M", "LS"],
+  area: ["SF", "SY", "SQM"],
   count: ["EA"],
 };
 

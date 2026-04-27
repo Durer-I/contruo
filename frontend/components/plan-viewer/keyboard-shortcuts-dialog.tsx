@@ -43,6 +43,8 @@ const SECTIONS: { title: string; rows: { keys: string; action: string }[] }[] = 
     rows: [
       { keys: "Ctrl+F", action: "Find text in plans" },
       { keys: "Ctrl+E", action: "Export quantities" },
+      { keys: "Ctrl+0", action: "Fit page" },
+      { keys: "Ctrl+2", action: "Fit width" },
       { keys: "+ / −", action: "Zoom in / out" },
       { keys: "Space + drag", action: "Pan (on canvas)" },
       { keys: "?", action: "Open this help" },

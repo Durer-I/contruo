@@ -11,7 +11,6 @@ import {
 } from "react";
 import { configurePdfWorker } from "@/lib/pdf-worker";
 import {
-  loadViewport,
   saveViewport,
   type FitMode,
   type SheetViewportState,
@@ -260,16 +259,19 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
     const linearFreehandStrokeRef = useRef<PdfPoint[] | null>(null);
     const linearFreehandPointerIdRef = useRef<number | null>(null);
     const centeredForKeyRef = useRef<string | null>(null);
+    /** Latest ``viewportStorageKey`` for async focus/zoom races (debug + stale guards). */
+    const viewportStorageKeyRef = useRef<string | null>(viewportStorageKey);
+    viewportStorageKeyRef.current = viewportStorageKey;
 
     const liveRef = useRef({
       zoomMultiplier: 1,
       pan: { x: 0, y: 0 },
-      fitMode: "width" as FitMode,
+      fitMode: "page" as FitMode,
     });
 
     const [pdfError, setPdfError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-    const [fitMode, setFitMode] = useState<FitMode>("width");
+    const [fitMode, setFitMode] = useState<FitMode>("page");
     const [zoomMultiplier, setZoomMultiplier] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [pageCssSize, setPageCssSize] = useState({ w: 0, h: 0 });
@@ -315,22 +317,30 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
 
     useEffect(() => {
       centeredForKeyRef.current = null;
+      // #region agent log
+      fetch("http://127.0.0.1:7319/ingest/5d4687f9-e6fb-4986-8f29-165e267f26bf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3f5067" },
+        body: JSON.stringify({
+          sessionId: "3f5067",
+          location: "plan-pdf-canvas.tsx:viewportStorageKeyEffect",
+          message: "viewport key effect: reset fit page + z=1",
+          data: { viewportStorageKey },
+          hypothesisId: "H1",
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       if (!viewportStorageKey) {
-        setFitMode("width");
+        setFitMode("page");
         setZoomMultiplier(1);
         setPan({ x: 0, y: 0 });
         return;
       }
-      const saved = loadViewport(viewportStorageKey);
-      if (saved) {
-        setFitMode(saved.fitMode);
-        setZoomMultiplier(saved.zoomMultiplier);
-        setPan({ x: saved.panX, y: saved.panY });
-      } else {
-        setFitMode("width");
-        setZoomMultiplier(1);
-        setPan({ x: 0, y: 0 });
-      }
+      // New sheet: always start at fit page (centering runs once sizes are known).
+      setFitMode("page");
+      setZoomMultiplier(1);
+      setPan({ x: 0, y: 0 });
     }, [viewportStorageKey]);
 
     useEffect(() => {
@@ -459,13 +469,9 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
       };
     }, [renderPage, documentUrl, loading, containerSize.w, containerSize.h, fitMode, zoomMultiplier]);
 
-    // Center once per sheet when no saved viewport
+    // Center once per sheet after fit-page dimensions are known.
     useEffect(() => {
       if (!viewportStorageKey) return;
-      if (loadViewport(viewportStorageKey)) {
-        centeredForKeyRef.current = viewportStorageKey;
-        return;
-      }
       if (centeredForKeyRef.current === viewportStorageKey) return;
       const cw = containerSize.w;
       const ch = containerSize.h;
@@ -525,12 +531,29 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
     );
 
     const focusPdfRect = useCallback((bounds: PdfFocusBounds) => {
+      const keyWhenInvoked = viewportStorageKeyRef.current;
+      // #region agent log
+      fetch("http://127.0.0.1:7319/ingest/5d4687f9-e6fb-4986-8f29-165e267f26bf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3f5067" },
+        body: JSON.stringify({
+          sessionId: "3f5067",
+          location: "plan-pdf-canvas.tsx:focusPdfRect:start",
+          message: "focusPdfRect invoked",
+          data: { keyWhenInvoked },
+          hypothesisId: "H1",
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       void (async () => {
         const pdf = pdfRef.current;
         const container = containerRef.current;
         if (!pdf || !container) return;
 
         const page = await pdf.getPage(pageNumber);
+        if (viewportStorageKeyRef.current !== keyWhenInvoked) return;
+
         const base = page.getViewport({ scale: 1 });
         const cw = container.clientWidth;
         const ch = container.clientHeight;
@@ -552,7 +575,9 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
 
         const s0 = liveRef.current;
         const fs = computeFitScale(s0.fitMode, cw, ch, base.width, base.height);
-        let zoomMult = s0.zoomMultiplier;
+        // Always compute focus from baseline zoom (1× fit scale), not liveRef multiplier,
+        // so a stale multiplier from a prior sheet/navigation cannot carry over.
+        let zoomMult = 1;
 
         const measurePixelSize = (zm: number) => {
           const vp = page.getViewport({ scale: fs * zm });
@@ -577,7 +602,7 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
         };
 
         const pad = 56;
-        let { bw, bh } = measurePixelSize(zoomMult);
+        const { bw, bh } = measurePixelSize(zoomMult);
         const maxW = Math.max(80, cw - pad);
         const maxH = Math.max(80, ch - pad);
 
@@ -597,6 +622,40 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
         const cx = (minX + maxX) / 2;
         const cy = (minY + maxY) / 2;
         const [vx, vy] = vp.convertToViewportPoint(cx, cy);
+        const keyNow = viewportStorageKeyRef.current;
+        const stale = keyWhenInvoked !== keyNow;
+        // #region agent log
+        fetch("http://127.0.0.1:7319/ingest/5d4687f9-e6fb-4986-8f29-165e267f26bf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3f5067" },
+          body: JSON.stringify({
+            sessionId: "3f5067",
+            location: "plan-pdf-canvas.tsx:focusPdfRect:beforeSetState",
+            message: "focusPdfRect about to apply zoom/pan",
+            data: { keyWhenInvoked, keyNow, zoomMult, stale },
+            hypothesisId: "H1",
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
+        if (stale) {
+          // #region agent log
+          fetch("http://127.0.0.1:7319/ingest/5d4687f9-e6fb-4986-8f29-165e267f26bf", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "3f5067" },
+            body: JSON.stringify({
+              sessionId: "3f5067",
+              runId: "post-fix",
+              location: "plan-pdf-canvas.tsx:focusPdfRect:skipStale",
+              message: "focusPdfRect skipped (sheet changed)",
+              data: { keyWhenInvoked, keyNow },
+              hypothesisId: "H1",
+              timestamp: Date.now(),
+            }),
+          }).catch(() => {});
+          // #endregion
+          return;
+        }
         setZoomMultiplier(zoomMult);
         setPan({ x: cw / 2 - vx, y: ch / 2 - vy });
       })();
@@ -883,7 +942,7 @@ export const PlanPdfCanvas = forwardRef<PlanPdfCanvasHandle, PlanPdfCanvasProps>
       >
         {loading && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-background/40 text-sm text-muted-foreground">
-            Loading PDF…
+            Loading Drawing...
           </div>
         )}
         {pdfError && (

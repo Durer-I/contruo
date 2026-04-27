@@ -1,7 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useState,
+} from "react";
+import { Loader2, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +33,10 @@ import type { ConditionTemplateInfo } from "@/types/assembly";
 import { AssemblyItemsSection } from "./assembly-items-section";
 import { ConditionColorPicker } from "./condition-color-picker";
 import { DeleteConditionDialog } from "./delete-condition-dialog";
+
+export type ConditionManagerPanelHandle = {
+  startNew: () => void;
+};
 
 interface ConditionManagerPanelProps {
   projectId: string;
@@ -112,16 +123,22 @@ function formFromCondition(c: ConditionInfo): FormState {
   };
 }
 
-export function ConditionManagerPanel({
-  projectId,
-  conditions,
-  activeConditionId,
-  onActiveConditionChange,
-  onConditionsChange,
-  onSheetMeasurementsRefresh,
-  onCollaborationMutation,
-  canManage,
-}: ConditionManagerPanelProps) {
+export const ConditionManagerPanel = forwardRef<
+  ConditionManagerPanelHandle,
+  ConditionManagerPanelProps
+>(function ConditionManagerPanel(
+  {
+    projectId,
+    conditions,
+    activeConditionId,
+    onActiveConditionChange,
+    onConditionsChange,
+    onSheetMeasurementsRefresh,
+    onCollaborationMutation,
+    canManage,
+  },
+  ref
+) {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>(defaultForm);
   const [saving, setSaving] = useState(false);
@@ -153,6 +170,8 @@ export function ConditionManagerPanel({
     if (!canManage) return;
     setCreating(true);
   }, [canManage]);
+
+  useImperativeHandle(ref, () => ({ startNew }), [startNew]);
 
   const clearSelection = useCallback(() => {
     setCreating(false);
@@ -326,24 +345,6 @@ export function ConditionManagerPanel({
       className="flex min-h-0 flex-1 flex-col"
       onPointerDownCapture={onColumnPointerDownCapture}
     >
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Conditions
-        </span>
-        {canManage ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1 text-xs"
-            onClick={startNew}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New
-          </Button>
-        ) : null}
-      </div>
-
       <ScrollArea className="min-h-0 flex-1">
         <ul className="flex flex-col gap-1 p-2">
           {conditions.map((c) => {
@@ -823,4 +824,6 @@ export function ConditionManagerPanel({
       ) : null}
     </div>
   );
-}
+});
+
+ConditionManagerPanel.displayName = "ConditionManagerPanel";

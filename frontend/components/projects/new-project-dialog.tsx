@@ -19,6 +19,7 @@ import { api, ApiError } from "@/lib/api";
 import type { PlanInfo, ProjectInfo } from "@/types/project";
 
 import { PlanUploadZone } from "./plan-upload-zone";
+import { ProjectCoverField } from "./project-cover-field";
 
 interface NewProjectDialogProps {
   /** Single-element trigger; use `Button` so Base UI dialog trigger keeps native button semantics. */
@@ -30,6 +31,7 @@ export function NewProjectDialog({ trigger, onCreated }: NewProjectDialogProps) 
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [coverImage, setCoverImage] = useState<File | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +40,7 @@ export function NewProjectDialog({ trigger, onCreated }: NewProjectDialogProps) 
   function reset() {
     setName("");
     setDescription("");
+    setCoverImage(null);
     setPendingFile(null);
     setSubmitting(false);
     setError(null);
@@ -49,6 +52,10 @@ export function NewProjectDialog({ trigger, onCreated }: NewProjectDialogProps) 
       setError("Project name is required");
       return;
     }
+    if (!coverImage) {
+      setError("Add a project cover image (JPEG, PNG, or WebP).");
+      return;
+    }
     setSubmitting(true);
     setError(null);
 
@@ -58,7 +65,22 @@ export function NewProjectDialog({ trigger, onCreated }: NewProjectDialogProps) 
         description: description.trim() || null,
       });
 
-      onCreated?.(project);
+      try {
+        await api.uploadFile<ProjectInfo>(`/api/v1/projects/${project.id}/cover`, coverImage);
+      } catch (uploadErr) {
+        try {
+          await api.delete(`/api/v1/projects/${project.id}`);
+        } catch {
+          // best-effort rollback
+        }
+        setError(
+          uploadErr instanceof ApiError
+            ? uploadErr.message
+            : "Could not upload the cover image. Try a smaller file or different format."
+        );
+        setSubmitting(false);
+        return;
+      }
 
       // If a plan was staged, upload it now before navigating so the workspace
       // sees a "processing" plan immediately.
@@ -71,12 +93,16 @@ export function NewProjectDialog({ trigger, onCreated }: NewProjectDialogProps) 
         planId = plan.id;
       }
 
+      const href = planId
+        ? `/project/${project.id}?plan=${encodeURIComponent(planId)}`
+        : `/project/${project.id}`;
+      // Navigate before list refresh so the client route always wins over parent re-renders.
+      router.replace(href);
       setOpen(false);
       reset();
-      const href = planId
-        ? `/project/${project.id}?plan=${planId}`
-        : `/project/${project.id}`;
-      router.push(href);
+      queueMicrotask(() => {
+        onCreated?.(project);
+      });
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to create project");
     } finally {
@@ -98,9 +124,17 @@ export function NewProjectDialog({ trigger, onCreated }: NewProjectDialogProps) 
           <DialogHeader>
             <DialogTitle>New Project</DialogTitle>
             <DialogDescription>
-              Start a new takeoff. You can add plans now or later.
+              Start a new takeoff with a cover image. You can change it later from the project
+              menu. Plans are optional now or after creation.
             </DialogDescription>
           </DialogHeader>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-muted-foreground">
+              Project cover <span className="text-destructive">*</span>
+            </label>
+            <ProjectCoverField file={coverImage} onFile={setCoverImage} disabled={submitting} />
+          </div>
 
           <div className="flex flex-col gap-1.5">
             <label htmlFor="project-name" className="text-xs font-medium text-muted-foreground">
@@ -158,7 +192,7 @@ export function NewProjectDialog({ trigger, onCreated }: NewProjectDialogProps) 
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting || !name.trim()}>
+            <Button type="submit" disabled={submitting || !name.trim() || !coverImage}>
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Create Project
             </Button>

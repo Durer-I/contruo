@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Loader2 } from "lucide-react";
 
 export default function LoginPage() {
@@ -68,9 +69,8 @@ export default function LoginPage() {
               Forgot password?
             </Link>
           </div>
-          <Input
+          <PasswordInput
             id="password"
-            type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required

@@ -1,14 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { Loader2, Plus } from "lucide-react";
+
+import { ProjectCard } from "@/components/projects/project-card";
 
 import { useAuth } from "@/providers/auth-provider";
 import { WelcomeModal } from "@/components/auth/welcome-modal";
 import { NewProjectDialog } from "@/components/projects/new-project-dialog";
 import { Button } from "@/components/ui/button";
 import { useProjects } from "@/hooks/use-projects";
-import { formatRelativeTime } from "@/lib/utils";
+import Link from "next/link";
 import { hasPermission, type Role } from "@/lib/permissions";
 
 export default function DashboardPage() {
@@ -96,24 +97,11 @@ export default function DashboardPage() {
       {recent.length > 0 && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {recent.map((project) => (
-            <Link
+            <ProjectCard
               key={project.id}
+              project={project}
               href={`/project/${project.id}`}
-              className="group cursor-pointer rounded-md border border-border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-surface-overlay"
-            >
-              <h3 className="font-medium">{project.name}</h3>
-              {project.description && (
-                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                  {project.description}
-                </p>
-              )}
-              <div className="mt-3 flex flex-col gap-1 text-sm text-muted-foreground">
-                <span>
-                  {project.sheet_count} sheet{project.sheet_count === 1 ? "" : "s"}
-                </span>
-                <span>Updated {formatRelativeTime(project.updated_at)}</span>
-              </div>
-            </Link>
+            />
           ))}
         </div>
       )}

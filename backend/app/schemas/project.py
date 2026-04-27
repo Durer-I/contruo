@@ -24,6 +24,8 @@ class ProjectResponse(BaseModel):
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
+    #: Signed GET URL for the project card image, or null when none uploaded.
+    cover_image_url: str | None = None
     #: Aggregated counts for dashboard cards (denormalized in the listing query, not persisted).
     sheet_count: int = 0
     member_count: int = 0

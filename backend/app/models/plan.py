@@ -37,6 +37,8 @@ class Plan(Base):
     processed_pages: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0"
     )
+    #: During ``status=processing``: ``extract`` (PDF pages) or ``persist`` (DB sheet rows); null when idle/ready.
+    processing_substep: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False

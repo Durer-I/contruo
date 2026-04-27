@@ -93,24 +93,6 @@ export function CollaborationTopBarRegistrar({ sheets }: { sheets: SheetInfo[] }
         ? document.getElementById(COLLAB_TOPBAR_MOUNT_ID)
         : null;
     setMountEl(el);
-    // #region agent log
-    fetch("http://127.0.0.1:7319/ingest/5d4687f9-e6fb-4986-8f29-165e267f26bf", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "f5bf11",
-      },
-      body: JSON.stringify({
-        sessionId: "f5bf11",
-        location: "collaboration-top-bar-registrar.tsx:useLayoutEffect",
-        message: "collab topbar portal mount",
-        data: { mountFound: !!el, insideRoom },
-        timestamp: Date.now(),
-        hypothesisId: "H1",
-        runId: "portal-fix",
-      }),
-    }).catch(() => {});
-    // #endregion
   }, [insideRoom]);
 
   if (!mountEl) return null;

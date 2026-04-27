@@ -18,6 +18,8 @@ from app.schemas.plan import (
     PlanListResponse,
     SheetListItemResponse,
     SheetListResponse,
+    SheetThumbnailUrlsRequest,
+    SheetThumbnailUrlsResponse,
     ProjectSearchResponse,
     SearchHit,
 )
@@ -25,6 +27,15 @@ from app.schemas.assembly import ImportConditionTemplateRequest
 from app.schemas.condition import ConditionResponse
 
 router = APIRouter(prefix="/projects")
+
+
+async def _project_card_counts(
+    db: AsyncSession, org_id: uuid.UUID, project_id: uuid.UUID
+) -> tuple[int, int]:
+    """Sheet total for this project + org-wide active member count (matches list cards)."""
+    sc = await project_service.count_sheets_for_project(db, org_id, project_id)
+    mc = await project_service.count_active_org_members(db, org_id)
+    return sc, mc
 
 
 # ── Projects ─────────────────────────────────────────────────────────
@@ -60,6 +71,7 @@ async def create_project(
         created_by=project.created_by,
         created_at=project.created_at,
         updated_at=project.updated_at,
+        cover_image_url=None,
         sheet_count=0,
         member_count=0,
     )
@@ -99,6 +111,7 @@ async def get_project(
     db: AsyncSession = Depends(get_db),
 ):
     project = await project_service.get_project(db, auth.org_id, project_id)
+    sheet_count, member_count = await _project_card_counts(db, auth.org_id, project_id)
     return ProjectResponse(
         id=project.id,
         org_id=project.org_id,
@@ -108,8 +121,9 @@ async def get_project(
         created_by=project.created_by,
         created_at=project.created_at,
         updated_at=project.updated_at,
-        sheet_count=0,
-        member_count=0,
+        cover_image_url=project_service.project_cover_signed_url(project.cover_image_path),
+        sheet_count=sheet_count,
+        member_count=member_count,
     )
 
 
@@ -120,6 +134,7 @@ async def update_project(
     auth: AuthContext = Depends(require_permission(Permission.CREATE_PROJECTS)),
     db: AsyncSession = Depends(get_db),
 ):
+    _fields_set = getattr(body, "model_fields_set", None) or set()
     project = await project_service.update_project(
         db,
         auth.org_id,
@@ -127,8 +142,10 @@ async def update_project(
         auth.user_id,
         name=body.name,
         description=body.description,
+        description_provided="description" in _fields_set,
         status=body.status,
     )
+    sheet_count, member_count = await _project_card_counts(db, auth.org_id, project_id)
     return ProjectResponse(
         id=project.id,
         org_id=project.org_id,
@@ -138,8 +155,42 @@ async def update_project(
         created_by=project.created_by,
         created_at=project.created_at,
         updated_at=project.updated_at,
-        sheet_count=0,
-        member_count=0,
+        cover_image_url=project_service.project_cover_signed_url(project.cover_image_path),
+        sheet_count=sheet_count,
+        member_count=member_count,
+    )
+
+
+@router.post("/{project_id}/cover", response_model=ProjectResponse)
+async def upload_project_cover(
+    project_id: uuid.UUID,
+    file: UploadFile = File(...),
+    auth: AuthContext = Depends(require_permission(Permission.CREATE_PROJECTS)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload or replace the project card cover image (JPEG, PNG, or WebP)."""
+    content = await file.read()
+    project = await project_service.upload_project_cover(
+        db,
+        auth.org_id,
+        project_id,
+        auth.user_id,
+        content=content,
+        content_type=file.content_type,
+    )
+    sheet_count, member_count = await _project_card_counts(db, auth.org_id, project_id)
+    return ProjectResponse(
+        id=project.id,
+        org_id=project.org_id,
+        name=project.name,
+        description=project.description,
+        status=project.status,
+        created_by=project.created_by,
+        created_at=project.created_at,
+        updated_at=project.updated_at,
+        cover_image_url=project_service.project_cover_signed_url(project.cover_image_path),
+        sheet_count=sheet_count,
+        member_count=member_count,
     )
 
 
@@ -181,6 +232,7 @@ async def upload_plan(
         page_count=plan.page_count,
         status=plan.status,
         processed_pages=plan.processed_pages,
+        processing_substep=plan.processing_substep,
         error_message=plan.error_message,
         uploaded_by=plan.uploaded_by,
         created_at=plan.created_at,
@@ -205,6 +257,7 @@ async def list_project_plans(
                 page_count=p.page_count,
                 status=p.status,
                 processed_pages=p.processed_pages,
+                processing_substep=p.processing_substep,
                 error_message=p.error_message,
                 uploaded_by=p.uploaded_by,
                 created_at=p.created_at,
@@ -223,10 +276,6 @@ async def list_project_sheets(
 ):
     sheets = await plan_service.list_project_sheets(db, auth.org_id, project_id)
 
-    def _snap_count(row) -> int:
-        segs = getattr(row, "vector_snap_segments", None)
-        return len(segs) if isinstance(segs, list) else 0
-
     return {
         "sheets": [
             SheetListItemResponse(
@@ -241,13 +290,30 @@ async def list_project_sheets(
                 scale_source=s.scale_source,
                 width_px=s.width_px,
                 height_px=s.height_px,
-                thumbnail_url=plan_service.sheet_thumbnail_url(s),
+                thumbnail_url=None,
                 created_at=s.created_at,
-                vector_snap_segment_count=_snap_count(s),
+                vector_snap_segment_count=s.vector_snap_segment_count,
             )
             for s in sheets
         ]
     }
+
+
+@router.post(
+    "/{project_id}/sheets/thumbnail-urls",
+    response_model=SheetThumbnailUrlsResponse,
+)
+async def post_sheet_thumbnail_urls(
+    project_id: uuid.UUID,
+    body: SheetThumbnailUrlsRequest,
+    auth: AuthContext = Depends(require_permission(Permission.VIEW_PLANS)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Signed thumbnail URLs for up to 100 sheets (batch; parallel signing on server)."""
+    urls = await plan_service.resolve_thumbnail_urls_for_sheets(
+        db, auth.org_id, project_id, body.sheet_ids
+    )
+    return SheetThumbnailUrlsResponse(urls=urls)
 
 
 @router.post(

@@ -9,12 +9,18 @@ interface UseProjectsState {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  /** Patch one project in the local list (e.g. after cover upload before refetch completes). */
+  mergeProject: (id: string, patch: Partial<ProjectInfo>) => void;
 }
 
 export function useProjects(): UseProjectsState {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const mergeProject = useCallback((id: string, patch: Partial<ProjectInfo>) => {
+    setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -34,5 +40,5 @@ export function useProjects(): UseProjectsState {
     void refresh();
   }, [refresh]);
 
-  return { projects, loading, error, refresh };
+  return { projects, loading, error, refresh, mergeProject };
 }

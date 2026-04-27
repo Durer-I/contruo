@@ -22,6 +22,9 @@ from app.utils.scale_detect import detect_scale
 
 logger = logging.getLogger(__name__)
 
+#: Sheet rows committed per transaction during the persist phase (after PDF extract).
+SHEET_INSERT_CHUNK = 20
+
 #: Avoid one huge INSERT/commit (timeouts on pooler / long locks) for large drawings.
 _MAX_TEXT_CHARS_PER_SHEET = 2_000_000
 #: Still plenty for snap; full extract may collect more in memory during PDF parse.
@@ -77,7 +80,7 @@ def _mark_error(plan_id: uuid.UUID, message: str) -> None:
         session.execute(
             update(Plan)
             .where(Plan.id == plan_id)
-            .values(status="error", error_message=message[:500])
+            .values(status="error", error_message=message[:500], processing_substep=None)
         )
         session.commit()
 
@@ -116,7 +119,12 @@ def process_plan(self, plan_id_str: str) -> dict:
             session.execute(
                 update(Plan)
                 .where(Plan.id == plan_id)
-                .values(status="processing", processed_pages=0, error_message=None)
+                .values(
+                    status="processing",
+                    processed_pages=0,
+                    error_message=None,
+                    processing_substep=None,
+                )
             )
             session.commit()
     except Exception as e:
@@ -138,11 +146,32 @@ def process_plan(self, plan_id_str: str) -> dict:
                 s.execute(
                     update(Plan)
                     .where(Plan.id == plan_id)
-                    .values(processed_pages=processed, page_count=total)
+                    .values(
+                        processed_pages=processed,
+                        page_count=total,
+                        processing_substep="extract",
+                    )
                 )
                 s.commit()
         except Exception:
             logger.exception("Progress update failed (non-fatal)")
+
+    def _persist_progress(saved: int, total_pages: int) -> None:
+        """Second-phase progress: sheets written to DB (0 .. total_pages)."""
+        try:
+            with SyncSession() as s:
+                s.execute(
+                    update(Plan)
+                    .where(Plan.id == plan_id)
+                    .values(
+                        processed_pages=saved,
+                        page_count=total_pages,
+                        processing_substep="persist",
+                    )
+                )
+                s.commit()
+        except Exception:
+            logger.exception("Persist progress update failed (non-fatal)")
 
     try:
         result = extract_pdf(pdf_bytes, on_page=_progress)
@@ -151,11 +180,16 @@ def process_plan(self, plan_id_str: str) -> dict:
         _mark_error(plan_id, f"PDF parse failed: {e}")
         return {"status": "error", "message": str(e)}
 
-    # Persist sheets and upload thumbnails.
+    # Persist sheets and upload thumbnails (chunked DB commits + progress for UI).
     try:
         storage.ensure_bucket(storage.THUMBNAILS_BUCKET, public=False)
+        total_pages = result.page_count
+        _persist_progress(0, total_pages)
+
         with SyncSession() as session:
-            for page in result.pages:
+            batch: list[dict] = []
+            pages = list(result.pages)
+            for idx, page in enumerate(pages):
                 hint = detect_scale(
                     page.text_content or "", pdf_metadata=result.metadata
                 )
@@ -176,28 +210,34 @@ def process_plan(self, plan_id_str: str) -> dict:
                         logger.exception("Thumbnail upload failed for page %s", page.page_number)
                         thumb_path = None
 
-                sheet = Sheet(
-                    org_id=org_id,
-                    plan_id=plan_id,
-                    project_id=project_id,
-                    page_number=page.page_number,
-                    sheet_name=page.sheet_name,
-                    width_px=page.width_px,
-                    height_px=page.height_px,
-                    thumbnail_path=thumb_path,
-                    text_content=_sheet_text_for_db(page.text_content),
-                    scale_value=hint.scale_value if hint else None,
-                    scale_unit=hint.scale_unit if hint else None,
-                    scale_label=(hint.scale_label[:100] if hint else None),
-                    scale_source="auto" if hint else None,
-                    vector_snap_segments=_sheet_vectors_for_db(
-                        page.vector_snap_segments or None
-                    ),
+                batch.append(
+                    {
+                        "id": uuid.uuid4(),
+                        "org_id": org_id,
+                        "plan_id": plan_id,
+                        "project_id": project_id,
+                        "page_number": page.page_number,
+                        "sheet_name": page.sheet_name,
+                        "width_px": page.width_px,
+                        "height_px": page.height_px,
+                        "thumbnail_path": thumb_path,
+                        "text_content": _sheet_text_for_db(page.text_content),
+                        "scale_value": hint.scale_value if hint else None,
+                        "scale_unit": hint.scale_unit if hint else None,
+                        "scale_label": (hint.scale_label[:100] if hint else None),
+                        "scale_source": "auto" if hint else None,
+                        "vector_snap_segments": _sheet_vectors_for_db(
+                            page.vector_snap_segments or None
+                        ),
+                    }
                 )
-                session.add(sheet)
-                # One commit per sheet avoids a single massive transaction (large text +
-                # JSONB segments on many pages can exceed statement timeouts or stall the pooler).
-                session.commit()
+                flush_batch = len(batch) >= SHEET_INSERT_CHUNK or idx == len(pages) - 1
+                if flush_batch and batch:
+                    session.bulk_insert_mappings(Sheet, batch)
+                    session.commit()
+                    saved = idx + 1
+                    _persist_progress(saved, total_pages)
+                    batch = []
 
             logger.info(
                 "All sheets inserted for plan %s; marking ready (%s pages)",
@@ -212,6 +252,7 @@ def process_plan(self, plan_id_str: str) -> dict:
                     page_count=result.page_count,
                     processed_pages=result.page_count,
                     error_message=None,
+                    processing_substep=None,
                 )
             )
             session.commit()

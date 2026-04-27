@@ -62,9 +62,12 @@ async function request<T>(
       }
     }
 
+    const method = (options.method || "GET").toUpperCase();
     const response = await fetch(`${API_URL}${path}`, {
       ...options,
       headers,
+      // Avoid stale JSON (e.g. project list after cover upload) when a CDN/browser caches GETs.
+      cache: options.cache ?? (method === "GET" ? "no-store" : "default"),
     });
 
     if (!response.ok) {
@@ -140,10 +143,19 @@ async function uploadFile<T>(
         resolve(body as T);
       } else {
         const err = body.error ?? {};
+        const raw = (xhr.responseText || "").trim();
+        const fallbackMsg =
+          typeof err.message === "string" && err.message
+            ? err.message
+            : raw
+              ? raw.length > 200
+                ? `${raw.slice(0, 200)}…`
+                : raw
+              : xhr.statusText || "Upload failed";
         reject(
           new ApiError(
             err.code ?? "UPLOAD_FAILED",
-            err.message ?? xhr.statusText ?? "Upload failed",
+            fallbackMsg,
             status,
             err.details ?? {}
           )

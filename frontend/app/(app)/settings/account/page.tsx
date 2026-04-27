@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { useAuth } from "@/providers/auth-provider";
 import { api } from "@/lib/api";
 import { Loader2 } from "lucide-react";
@@ -113,23 +114,23 @@ export default function AccountPage() {
             <label htmlFor="new-pass" className="text-sm font-medium">
               New Password
             </label>
-            <Input
+            <PasswordInput
               id="new-pass"
-              type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="At least 8 characters"
+              autoComplete="new-password"
             />
           </div>
           <div className="space-y-2">
             <label htmlFor="confirm-pass" className="text-sm font-medium">
               Confirm Password
             </label>
-            <Input
+            <PasswordInput
               id="confirm-pass"
-              type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
             />
           </div>
           <Button
