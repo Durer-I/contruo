@@ -21,9 +21,11 @@ from app.schemas.org import (
 )
 from app.schemas.auth import AuthResponse
 from app.schemas.assembly import (
+    ConditionTemplateDetailResponse,
     ConditionTemplateListResponse,
     ConditionTemplateResponse,
     SaveConditionAsTemplateRequest,
+    UpdateConditionTemplateRequest,
 )
 from app.services import template_service
 
@@ -218,6 +220,27 @@ async def list_condition_templates(
     db: AsyncSession = Depends(get_db),
 ):
     return await template_service.list_templates(db, auth.org_id)
+
+
+@router.get("/condition-templates/{template_id}", response_model=ConditionTemplateDetailResponse)
+async def get_condition_template(
+    template_id: uuid.UUID,
+    auth: AuthContext = Depends(require_permission(Permission.VIEW_PLANS)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await template_service.get_template(db, auth.org_id, template_id)
+
+
+@router.patch("/condition-templates/{template_id}", response_model=ConditionTemplateDetailResponse)
+async def update_condition_template(
+    template_id: uuid.UUID,
+    body: UpdateConditionTemplateRequest,
+    auth: AuthContext = Depends(require_permission(Permission.MANAGE_CONDITIONS)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await template_service.update_template(
+        db, auth.org_id, template_id, auth.user_id, body
+    )
 
 
 @router.post(

@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import case, func, literal, select
+from sqlalchemy import case, delete as sa_delete, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.plan import Plan
@@ -344,3 +344,70 @@ async def retry_plan(
         logger.error("Failed to queue retry for plan %s: %s", plan_id, e)
 
     return plan
+
+
+async def delete_plan(
+    db: AsyncSession,
+    org_id: uuid.UUID,
+    plan_id: uuid.UUID,
+    acting_user_id: uuid.UUID,
+) -> None:
+    """Permanently delete a plan, its sheets/measurements (DB cascade), and storage files.
+
+    Refuses to delete the project's last plan: every project must have at least one
+    drawing while it has measurements/scale tied to a sheet. Callers should delete the
+    project itself if they truly want to remove everything.
+    """
+    plan = await get_plan(db, org_id, plan_id)
+
+    remaining = await db.execute(
+        select(func.count(Plan.id)).where(
+            Plan.org_id == org_id, Plan.project_id == plan.project_id
+        )
+    )
+    plan_count = int(remaining.scalar_one())
+    if plan_count <= 1:
+        raise AppException(
+            code="LAST_PLAN_REQUIRED",
+            message="Each project must keep at least one plan",
+            status_code=400,
+        )
+
+    thumb_rows = await db.execute(
+        select(Sheet.thumbnail_path).where(
+            Sheet.org_id == org_id, Sheet.plan_id == plan_id
+        )
+    )
+    thumb_paths = [t for (t,) in thumb_rows.all() if t]
+    plan_path = plan.storage_path
+    project_id = plan.project_id
+    filename = plan.filename
+
+    await db.execute(
+        sa_delete(Plan).where(Plan.id == plan_id, Plan.org_id == org_id)
+    )
+    await db.flush()
+
+    await log_event(
+        db,
+        org_id=org_id,
+        user_id=acting_user_id,
+        project_id=project_id,
+        event_type="plan.deleted",
+        entity_type="plan",
+        entity_id=plan_id,
+        payload={"filename": filename},
+    )
+
+    # Storage cleanup is best-effort; DB row is already gone, so failures here just
+    # leave orphaned blobs. Log loudly so they can be reclaimed by a sweeper later.
+    try:
+        if plan_path:
+            storage.remove_files(storage.PLANS_BUCKET, [plan_path])
+    except Exception as e:  # pragma: no cover - storage backend is mocked in tests
+        logger.error("Failed to remove plan PDF for %s: %s", plan_id, e)
+    try:
+        if thumb_paths:
+            storage.remove_files(storage.THUMBNAILS_BUCKET, thumb_paths)
+    except Exception as e:  # pragma: no cover
+        logger.error("Failed to remove %d thumbnails for plan %s: %s", len(thumb_paths), plan_id, e)

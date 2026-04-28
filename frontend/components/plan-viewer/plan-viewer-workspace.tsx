@@ -829,7 +829,11 @@ export function PlanViewerWorkspace({
   const onQuantitiesPatch = useCallback(
     async (
       id: string,
-      patch: { override_value?: number | null; deductions?: LinearDeductionPolyline[] }
+      patch: {
+        override_value?: number | null;
+        deductions?: LinearDeductionPolyline[];
+        label?: string | null;
+      }
     ) => {
       try {
         await api.patch(`/api/v1/measurements/${id}`, patch);

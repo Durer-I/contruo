@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db
@@ -70,3 +70,17 @@ async def retry_plan(
         created_at=plan.created_at,
         updated_at=plan.updated_at,
     )
+
+
+@router.delete("/{plan_id}", status_code=204)
+async def delete_plan(
+    plan_id: uuid.UUID,
+    auth: AuthContext = Depends(require_permission(Permission.UPLOAD_PLANS)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel an in-progress upload or delete a processed plan.
+
+    Refuses to delete the project's last remaining plan (returns 400 ``LAST_PLAN_REQUIRED``).
+    """
+    await plan_service.delete_plan(db, auth.org_id, plan_id, auth.user_id)
+    return Response(status_code=204)

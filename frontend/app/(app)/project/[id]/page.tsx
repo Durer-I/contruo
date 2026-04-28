@@ -272,6 +272,30 @@ export default function ProjectPage() {
     }
   }, [pendingFile, projectId, selectPlan]);
 
+  const handleDeletePlan = useCallback(
+    async (planId: string) => {
+      try {
+        await api.delete(`/api/v1/plans/${planId}`);
+      } catch (e) {
+        throw e instanceof ApiError
+          ? new Error(e.message)
+          : e instanceof Error
+            ? e
+            : new Error("Failed to delete plan");
+      }
+      // Drop the plan locally so the next render picks a fallback before refetch lands.
+      setPlans((prev) => prev.filter((p) => p.id !== planId));
+      setSheets((prev) => prev.filter((s) => s.plan_id !== planId));
+      setSelectedPlanId((prev) => (prev === planId ? null : prev));
+      try {
+        await refreshSheetsSilently();
+      } catch {
+        /* surfaced through plansSheetsError */
+      }
+    },
+    [refreshSheetsSilently]
+  );
+
   const handlePlanReady = useCallback(() => {
     void loadAll({ silent: true });
   }, [loadAll]);
@@ -313,6 +337,7 @@ export default function ProjectPage() {
         uploadProgress={uploadProgress}
         uploadError={uploadError}
         onConfirmUpload={handleUpload}
+        onDeletePlan={canUpload ? handleDeletePlan : undefined}
       />
 
       {plansSheetsError && !plansSheetsLoading && (

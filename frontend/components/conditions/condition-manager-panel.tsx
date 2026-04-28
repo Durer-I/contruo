@@ -27,7 +27,14 @@ import type {
   MeasurementType,
 } from "@/types/condition";
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { ConditionTemplateInfo } from "@/types/assembly";
 
 import { AssemblyItemsSection } from "./assembly-items-section";
@@ -145,6 +152,7 @@ export const ConditionManagerPanel = forwardRef<
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [duplicateTemplateOpen, setDuplicateTemplateOpen] = useState(false);
   const [templates, setTemplates] = useState<ConditionTemplateInfo[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
 
@@ -168,8 +176,9 @@ export const ConditionManagerPanel = forwardRef<
 
   const startNew = useCallback(() => {
     if (!canManage) return;
+    onActiveConditionChange(null);
     setCreating(true);
-  }, [canManage]);
+  }, [canManage, onActiveConditionChange]);
 
   useImperativeHandle(ref, () => ({ startNew }), [startNew]);
 
@@ -258,7 +267,7 @@ export const ConditionManagerPanel = forwardRef<
     }
   }, []);
 
-  const saveAsTemplate = useCallback(async () => {
+  const performSaveAsTemplate = useCallback(async () => {
     if (!active || !canManage) return;
     setSaving(true);
     setError(null);
@@ -275,6 +284,26 @@ export const ConditionManagerPanel = forwardRef<
     }
   }, [active, canManage, loadTemplates]);
 
+  const requestSaveAsTemplate = useCallback(async () => {
+    if (!active || !canManage) return;
+    setError(null);
+    try {
+      const r = await api.get<{ templates: ConditionTemplateInfo[] }>(
+        "/api/v1/org/condition-templates"
+      );
+      const dup = r.templates.some(
+        (x) => x.name.trim().toLowerCase() === active.name.trim().toLowerCase()
+      );
+      if (dup) {
+        setDuplicateTemplateOpen(true);
+        return;
+      }
+      await performSaveAsTemplate();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not check templates");
+    }
+  }, [active, canManage, performSaveAsTemplate]);
+
   const importTemplate = useCallback(
     async (templateId: string) => {
       if (!canManage) return;
@@ -286,8 +315,9 @@ export const ConditionManagerPanel = forwardRef<
           { template_id: templateId }
         );
         setImportOpen(false);
-        onActiveConditionChange(created.id);
         await onConditionsChange();
+        setCreating(false);
+        onActiveConditionChange(created.id);
         onCollaborationMutation?.();
       } catch (e) {
         setError(e instanceof ApiError ? e.message : "Import failed");
@@ -398,7 +428,7 @@ export const ConditionManagerPanel = forwardRef<
         <div className="mb-2 text-[11px] font-medium text-muted-foreground">
           {creating ? "New condition" : active ? `Edit: ${active.name}` : "Select a condition"}
         </div>
-
+          
         {error ? (
           <p className="mb-2 text-[11px] text-destructive">{error}</p>
         ) : null}
@@ -408,7 +438,22 @@ export const ConditionManagerPanel = forwardRef<
             Choose a condition above or create a new one.
           </p>
         ) : (
+          
           <div className="flex max-h-[min(52vh,480px)] flex-col gap-3 overflow-y-auto pr-1">
+            <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-[10px]"
+                  disabled={saving}
+                  onClick={() => {
+                    setImportOpen(true);
+                    void loadTemplates();
+                  }}
+                >
+                  Import from templates
+                </Button>
+            
             <label className="space-y-1">
               <span className="text-[10px] uppercase text-muted-foreground">Name</span>
               <Input
@@ -710,59 +755,10 @@ export const ConditionManagerPanel = forwardRef<
                   size="sm"
                   className="h-7 text-[10px]"
                   disabled={saving}
-                  onClick={() => void saveAsTemplate()}
+                  onClick={() => void requestSaveAsTemplate()}
                 >
                   Save as org template
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-[10px]"
-                  disabled={saving}
-                  onClick={() => {
-                    setImportOpen(true);
-                    void loadTemplates();
-                  }}
-                >
-                  Import from templates
-                </Button>
-                <Dialog open={importOpen} onOpenChange={setImportOpen}>
-                  <DialogContent className="max-w-md">
-                    <DialogHeader>
-                      <DialogTitle>Import condition</DialogTitle>
-                    </DialogHeader>
-                    {templatesLoading ? (
-                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-                      </p>
-                    ) : templates.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">No templates in your org library yet.</p>
-                    ) : (
-                      <ul className="max-h-64 space-y-1 overflow-auto">
-                        {templates.map((t) => (
-                          <li key={t.id}>
-                            <button
-                              type="button"
-                              disabled={saving}
-                              className="flex w-full items-center gap-2 rounded-md border border-border px-2 py-2 text-left text-xs hover:bg-surface-overlay"
-                              onClick={() => void importTemplate(t.id)}
-                            >
-                              <span
-                                className="h-2.5 w-2.5 shrink-0 rounded-full border border-border"
-                                style={{ backgroundColor: t.color }}
-                              />
-                              <span className="min-w-0 flex-1 truncate font-medium">{t.name}</span>
-                              <span className="shrink-0 text-[10px] text-muted-foreground">
-                                {t.measurement_type} · {t.assembly_item_count} items
-                              </span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </DialogContent>
-                </Dialog>
               </div>
             ) : null}
 
@@ -822,6 +818,77 @@ export const ConditionManagerPanel = forwardRef<
           busy={saving}
         />
       ) : null}
+
+      {canManage ? (
+        <Dialog open={importOpen} onOpenChange={setImportOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Import condition</DialogTitle>
+              <DialogDescription>
+                Pick a template to add as a new project condition. If you were drafting a new
+                condition, import replaces that flow with the template copy.
+              </DialogDescription>
+            </DialogHeader>
+            {templatesLoading ? (
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+              </p>
+            ) : templates.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No templates in your org library yet.</p>
+            ) : (
+              <ul className="max-h-64 space-y-1 overflow-auto">
+                {templates.map((t) => (
+                  <li key={t.id}>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      className="flex w-full items-center gap-2 rounded-md border border-border px-2 py-2 text-left text-xs hover:bg-surface-overlay"
+                      onClick={() => void importTemplate(t.id)}
+                    >
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full border border-border"
+                        style={{ backgroundColor: t.color }}
+                      />
+                      <span className="min-w-0 flex-1 truncate font-medium">{t.name}</span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {t.measurement_type} · {t.assembly_item_count} items
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
+      <Dialog open={duplicateTemplateOpen} onOpenChange={setDuplicateTemplateOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Template name already in library</DialogTitle>
+            <DialogDescription>
+              A template named &ldquo;{active?.name ?? ""}&rdquo; already exists for your org. You can
+              save anyway to add another template with the same label, or rename this condition first
+              for a clearer library.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="ghost" onClick={() => setDuplicateTemplateOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={saving || !active}
+              onClick={() => {
+                setDuplicateTemplateOpen(false);
+                void performSaveAsTemplate();
+              }}
+            >
+              Save anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 });

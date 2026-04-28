@@ -1,7 +1,14 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
+
+from app.schemas.condition import (
+    ConditionPropertiesPayload,
+    FillPattern,
+    LineStyle,
+)
 
 
 class AssemblyItemResponse(BaseModel):
@@ -59,6 +66,29 @@ class ConditionTemplateResponse(BaseModel):
 
 class ConditionTemplateListResponse(BaseModel):
     templates: list[ConditionTemplateResponse]
+
+
+class ConditionTemplateDetailResponse(ConditionTemplateResponse):
+    """Full template including assembly snapshot (for edit / detail)."""
+
+    assembly_items: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class UpdateConditionTemplateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    unit: str | None = Field(default=None, min_length=1, max_length=20)
+    color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    line_style: LineStyle | None = None
+    line_width: float | None = Field(default=None, ge=0.5, le=16.0)
+    fill_opacity: float | None = Field(default=None, ge=0.0, le=1.0)
+    fill_pattern: FillPattern | None = None
+    properties: ConditionPropertiesPayload | None = None
+    trade: str | None = Field(default=None, max_length=100)
+    description: str | None = None
+    assembly_items: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="If set, replaces the stored assembly snapshot entirely",
+    )
 
 
 class SaveConditionAsTemplateRequest(BaseModel):

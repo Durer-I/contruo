@@ -163,3 +163,73 @@ async def test_retry_plan_allowed_for_error_status(mock_db, _stub_pdf_processing
         result = await plan_service.retry_plan(mock_db, plan.org_id, plan.id, uuid.uuid4())
         assert result.status == "processing"
         _stub_pdf_processing_module.process_plan.delay.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_delete_plan_rejects_last_remaining_plan(mock_db):
+    """Last plan in a project must not be deletable — it would orphan measurements/scale."""
+    plan = MagicMock()
+    plan.id = uuid.uuid4()
+    plan.org_id = uuid.uuid4()
+    plan.project_id = uuid.uuid4()
+    plan.storage_path = "org/plans/plan/file.pdf"
+    plan.filename = "plan.pdf"
+
+    count_result = MagicMock()
+    count_result.scalar_one = MagicMock(return_value=1)
+    mock_db.execute = AsyncMock(return_value=count_result)
+
+    with patch(
+        "app.services.plan_service.get_plan",
+        new_callable=AsyncMock,
+        return_value=plan,
+    ):
+        with pytest.raises(AppException) as ei:
+            await plan_service.delete_plan(
+                mock_db, plan.org_id, plan.id, uuid.uuid4()
+            )
+    assert ei.value.code == "LAST_PLAN_REQUIRED"
+    assert ei.value.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_delete_plan_succeeds_when_other_plans_exist(mock_db):
+    """With >1 plan, delete the row, log the event, and clean up storage paths."""
+    plan = MagicMock()
+    plan.id = uuid.uuid4()
+    plan.org_id = uuid.uuid4()
+    plan.project_id = uuid.uuid4()
+    plan.storage_path = "org/plans/plan/file.pdf"
+    plan.filename = "plan.pdf"
+
+    count_result = MagicMock()
+    count_result.scalar_one = MagicMock(return_value=2)
+    thumb_result = MagicMock()
+    thumb_result.all = MagicMock(
+        return_value=[("org/plans/plan/thumbs/page-1.png",), (None,)]
+    )
+    delete_result = MagicMock()
+
+    # execute is called: (1) count remaining plans, (2) load thumbnail paths, (3) DELETE row.
+    mock_db.execute = AsyncMock(
+        side_effect=[count_result, thumb_result, delete_result]
+    )
+    mock_db.flush = AsyncMock()
+
+    with (
+        patch(
+            "app.services.plan_service.get_plan",
+            new_callable=AsyncMock,
+            return_value=plan,
+        ),
+        patch("app.services.plan_service.log_event", new_callable=AsyncMock) as log_mock,
+        patch("app.services.plan_service.storage.remove_files") as remove_mock,
+    ):
+        await plan_service.delete_plan(mock_db, plan.org_id, plan.id, uuid.uuid4())
+
+    assert mock_db.execute.await_count == 3
+    log_mock.assert_awaited_once()
+    # PDF + thumbnails are both cleaned up; the None thumbnail is filtered out.
+    paths_removed = {call.args[0]: call.args[1] for call in remove_mock.call_args_list}
+    assert paths_removed["plans"] == ["org/plans/plan/file.pdf"]
+    assert paths_removed["plan-thumbnails"] == ["org/plans/plan/thumbs/page-1.png"]

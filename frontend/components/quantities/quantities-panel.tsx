@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  PenLine,
   PencilLine,
   RotateCcw,
   Trash2,
@@ -113,7 +114,11 @@ export interface QuantitiesPanelProps {
   onNavigateToMeasurement: (m: MeasurementInfo) => void;
   onUpdateMeasurement: (
     id: string,
-    patch: { override_value?: number | null; deductions?: LinearDeductionPolyline[] }
+    patch: {
+      override_value?: number | null;
+      deductions?: LinearDeductionPolyline[];
+      label?: string | null;
+    }
   ) => Promise<void>;
   onDeleteMeasurement: (id: string) => Promise<void>;
   onReassignCondition: (id: string, conditionId: string) => Promise<void>;
@@ -182,7 +187,11 @@ export const QuantitiesPanel = forwardRef<QuantitiesPanelHandle, QuantitiesPanel
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const renameBlurSkipRef = useRef(false);
+  const renameSubmitLockRef = useRef(false);
   const [ctx, setCtx] = useState<{ x: number; y: number; measurementId: string } | null>(
     null
   );
@@ -345,9 +354,41 @@ export const QuantitiesPanel = forwardRef<QuantitiesPanelHandle, QuantitiesPanel
     if (!canEdit) return;
     const cond = conditions.find((c) => c.id === m.condition_id);
     if (!cond) return;
+    setRenamingId(null);
     setEditingId(m.id);
     setEditDraft(String(effectiveQuantity(m)));
   }, [canEdit, conditions]);
+
+  const startRename = useCallback((m: MeasurementInfo) => {
+    if (!canEdit) return;
+    setEditingId(null);
+    setRenamingId(m.id);
+    setRenameDraft(m.label?.trim() ?? "");
+  }, [canEdit]);
+
+  const submitRename = useCallback(
+    async (id: string, draft: string) => {
+      if (renameSubmitLockRef.current) return;
+      renameSubmitLockRef.current = true;
+      try {
+        const trimmed = draft.trim();
+        const nextLabel = trimmed.length === 0 ? null : trimmed.slice(0, 255);
+        const prev = measurements.find((x) => x.id === id)?.label ?? null;
+        const prevNorm = (prev && prev.trim()) || null;
+        if (prevNorm !== nextLabel) {
+          await onUpdateMeasurement(id, { label: nextLabel });
+        }
+      } catch {
+        //
+      } finally {
+        setRenamingId(null);
+        requestAnimationFrame(() => {
+          renameSubmitLockRef.current = false;
+        });
+      }
+    },
+    [measurements, onUpdateMeasurement]
+  );
 
   const commitEdit = useCallback(async () => {
     if (!editingId) return;
@@ -535,7 +576,7 @@ export const QuantitiesPanel = forwardRef<QuantitiesPanelHandle, QuantitiesPanel
                   <div
                     key={`m-${m.id}`}
                     className={cn(
-                      "absolute left-0 top-0 flex w-full items-center gap-0.5 border-b border-border/30 py-0.5 pr-1",
+                      "group absolute left-0 top-0 flex w-full items-center gap-0.5 border-b border-border/30 py-0.5 pr-1",
                       pad(2),
                       selected ? "bg-primary/15" : "hover:bg-muted/40"
                     )}
@@ -560,22 +601,77 @@ export const QuantitiesPanel = forwardRef<QuantitiesPanelHandle, QuantitiesPanel
                     ) : (
                       <span className="w-4 shrink-0" />
                     )}
-                    <button
-                      type="button"
-                      className="min-w-0 flex-1 truncate text-left text-foreground/95"
-                      onClick={(e) => {
-                        onMeasurementSelect(m.id, {
-                          ctrlKey: e.ctrlKey,
-                          metaKey: e.metaKey,
-                        });
-                        if (e.detail === 2) return;
-                        if (!e.ctrlKey && !e.metaKey) {
-                          void onNavigateToMeasurement(m);
-                        }
-                      }}
-                    >
-                      {m.label?.trim() || `Measurement ${m.id.slice(0, 8)}`}
-                    </button>
+                    {canEdit && renamingId !== m.id ? (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              // className="h-5 w-5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                              className="h-5 w-5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-transparent hover:!text-muted-foreground"
+                              aria-label="Rename measurement"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startRename(m);
+                              }}
+                            />
+                          }
+                        >
+                          <PenLine className="h-1.5 w-1.5" />
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="text-[10px]">
+                          Rename
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : null}
+                    {renamingId === m.id ? (
+                      <Input
+                        className="box-border min-h-0 min-w-0 flex-1 rounded border border-input bg-background px-1.5 py-0 text-[11px] leading-none shadow-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/40 md:text-[11px]"
+                        style={{ height: ROW_H - 4 }}
+                        value={renameDraft}
+                        maxLength={255}
+                        placeholder={`Measurement ${m.id.slice(0, 8)}`}
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void submitRename(m.id, renameDraft);
+                          }
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            renameBlurSkipRef.current = true;
+                            setRenamingId(null);
+                          }
+                        }}
+                        onBlur={() => {
+                          if (renameBlurSkipRef.current) {
+                            renameBlurSkipRef.current = false;
+                            return;
+                          }
+                          void submitRename(m.id, renameDraft);
+                        }}
+                        autoFocus
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 truncate text-left text-foreground/95"
+                        onClick={(e) => {
+                          onMeasurementSelect(m.id, {
+                            ctrlKey: e.ctrlKey,
+                            metaKey: e.metaKey,
+                          });
+                          if (e.detail === 2) return;
+                          if (!e.ctrlKey && !e.metaKey) {
+                            void onNavigateToMeasurement(m);
+                          }
+                        }}
+                      >
+                        {m.label?.trim() || `Measurement ${m.id.slice(0, 8)}`}
+                      </button>
+                    )}
                     {editingId === m.id ? (
                       <Input
                         className="h-6 w-20 shrink-0 px-1 py-0 text-[10px]"
@@ -723,6 +819,18 @@ export const QuantitiesPanel = forwardRef<QuantitiesPanelHandle, QuantitiesPanel
           </button>
           {canEdit ? (
             <>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-muted"
+                onClick={() => {
+                  const m = measurements.find((x) => x.id === ctx.measurementId);
+                  if (m) startRename(m);
+                  setCtx(null);
+                }}
+              >
+                <PenLine className="h-1.5 w-1.5" />
+                Rename…
+              </button>
               <button
                 type="button"
                 className="flex w-full rounded px-2 py-1.5 text-left hover:bg-muted"
