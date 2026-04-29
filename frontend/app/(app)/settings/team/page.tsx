@@ -4,6 +4,17 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { api, ApiError } from "@/lib/api";
 import { canManageBilling, type Role } from "@/lib/permissions";
 import { useAuth } from "@/providers/auth-provider";
@@ -51,6 +62,7 @@ export default function TeamPage() {
   const [inviteRole, setInviteRole] = useState("estimator");
   const [inviting, setInviting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDeactivation, setPendingDeactivation] = useState<MemberInfo | null>(null);
   const [seatMeta, setSeatMeta] = useState<{
     billable_seats_used: number;
     purchased_seats: number | null;
@@ -130,7 +142,6 @@ export default function TeamPage() {
   }
 
   async function handleDeactivate(memberId: string) {
-    if (!confirm("Deactivate this member? They will lose access but their work is preserved.")) return;
     try {
       await api.delete(`/api/v1/org/members/${memberId}`);
       await fetchData();
@@ -299,15 +310,16 @@ export default function TeamPage() {
               onChange={(e) => setInviteEmail(e.target.value)}
               className="flex-1"
             />
-            <select
+            <NativeSelect
               value={inviteRole}
               onChange={(e) => setInviteRole(e.target.value)}
-              className="rounded-md border border-border bg-surface px-3 py-2 text-sm"
+              className="w-32"
+              aria-label="Invitation role"
             >
               <option value="admin">Admin</option>
               <option value="estimator">Estimator</option>
               <option value="viewer">Viewer</option>
-            </select>
+            </NativeSelect>
             <Button onClick={handleInvite} disabled={inviting || !inviteEmail}>
               {inviting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -350,20 +362,23 @@ export default function TeamPage() {
                   <td className="px-4 py-3 text-right">
                     {member.role !== "owner" && member.id !== user?.id && (
                       <div className="flex items-center justify-end gap-2">
-                        <select
+                        <NativeSelect
                           value={member.role}
                           onChange={(e) => handleRoleChange(member.id, e.target.value)}
-                          className="rounded border border-border bg-surface px-2 py-1 text-xs"
+                          size="sm"
+                          className="w-28"
+                          aria-label={`Change role for ${member.full_name}`}
                         >
                           <option value="admin">Admin</option>
                           <option value="estimator">Estimator</option>
                           <option value="viewer">Viewer</option>
-                        </select>
+                        </NativeSelect>
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 text-red-400 hover:text-red-300"
-                          onClick={() => handleDeactivate(member.id)}
+                          onClick={() => setPendingDeactivation(member)}
+                          aria-label={`Deactivate ${member.full_name}`}
                         >
                           <Ban className="h-3.5 w-3.5" />
                         </Button>
@@ -468,6 +483,37 @@ export default function TeamPage() {
         </div>
       )}
       </div>
+
+      <AlertDialog
+        open={pendingDeactivation !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeactivation(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deactivate member?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDeactivation
+                ? `${pendingDeactivation.full_name} will lose access to the workspace. Their work will be preserved and they can be reinstated later.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                const target = pendingDeactivation;
+                setPendingDeactivation(null);
+                if (target) void handleDeactivate(target.id);
+              }}
+            >
+              Deactivate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

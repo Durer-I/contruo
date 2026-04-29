@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
 import { api, ApiError } from "@/lib/api";
 import type { ProjectInfo } from "@/types/project";
 
@@ -13,32 +15,50 @@ interface UseProjectsState {
   mergeProject: (id: string, patch: Partial<ProjectInfo>) => void;
 }
 
-export function useProjects(): UseProjectsState {
-  const [projects, setProjects] = useState<ProjectInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export const PROJECTS_QUERY_KEY = ["projects"] as const;
 
-  const mergeProject = useCallback((id: string, patch: Partial<ProjectInfo>) => {
-    setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-  }, []);
+async function fetchProjects(): Promise<ProjectInfo[]> {
+  const data = await api.get<{ projects: ProjectInfo[] }>("/api/v1/projects");
+  return data.projects;
+}
+
+/**
+ * `useProjects` keeps its previous imperative API (`projects`, `loading`,
+ * `error`, `refresh`, `mergeProject`) but is now backed by React Query so that
+ * multiple consumers share a single in-flight request and an LRU cache.
+ */
+export function useProjects(): UseProjectsState {
+  const queryClient = useQueryClient();
+
+  const query = useQuery<ProjectInfo[], ApiError>({
+    queryKey: PROJECTS_QUERY_KEY,
+    queryFn: fetchProjects,
+    staleTime: 30_000,
+  });
 
   const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api.get<{ projects: ProjectInfo[] }>("/api/v1/projects");
-      setProjects(data.projects);
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "Failed to load projects";
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    await queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY });
+  }, [queryClient]);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const mergeProject = useCallback(
+    (id: string, patch: Partial<ProjectInfo>) => {
+      queryClient.setQueryData<ProjectInfo[]>(PROJECTS_QUERY_KEY, (prev) => {
+        if (!prev) return prev;
+        return prev.map((p) => (p.id === id ? { ...p, ...patch } : p));
+      });
+    },
+    [queryClient]
+  );
 
-  return { projects, loading, error, refresh, mergeProject };
+  return {
+    projects: query.data ?? [],
+    loading: query.isLoading,
+    error: query.error
+      ? query.error instanceof ApiError
+        ? query.error.message
+        : "Failed to load projects"
+      : null,
+    refresh,
+    mergeProject,
+  };
 }

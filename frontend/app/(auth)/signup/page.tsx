@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Loader2 } from "lucide-react";
 
@@ -53,9 +54,7 @@ export default function SignupPage() {
           </div>
         )}
         <div className="space-y-2">
-          <label htmlFor="name" className="text-sm font-medium">
-            Full Name
-          </label>
+          <Label htmlFor="name">Full Name</Label>
           <Input
             id="name"
             placeholder="John Doe"
@@ -66,9 +65,7 @@ export default function SignupPage() {
           />
         </div>
         <div className="space-y-2">
-          <label htmlFor="email" className="text-sm font-medium">
-            Email
-          </label>
+          <Label htmlFor="email">Email</Label>
           <Input
             id="email"
             type="email"
@@ -80,9 +77,7 @@ export default function SignupPage() {
           />
         </div>
         <div className="space-y-2">
-          <label htmlFor="org-name" className="text-sm font-medium">
-            Organization Name
-          </label>
+          <Label htmlFor="org-name">Organization Name</Label>
           <Input
             id="org-name"
             placeholder="Acme Construction LLC"
@@ -92,9 +87,7 @@ export default function SignupPage() {
           />
         </div>
         <div className="space-y-2">
-          <label htmlFor="password" className="text-sm font-medium">
-            Password
-          </label>
+          <Label htmlFor="password">Password</Label>
           <PasswordInput
             id="password"
             placeholder="Minimum 8 characters"

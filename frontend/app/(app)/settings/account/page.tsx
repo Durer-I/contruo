@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { useAuth } from "@/providers/auth-provider";
 import { api } from "@/lib/api";
@@ -14,7 +16,6 @@ export default function AccountPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (user?.full_name !== undefined) {
@@ -24,13 +25,12 @@ export default function AccountPage() {
 
   async function handleSaveProfile() {
     setSaving(true);
-    setMessage(null);
     try {
       await api.patch("/api/v1/auth/me", { full_name: fullName });
       await refreshMe();
-      setMessage("Profile updated");
+      toast.success("Profile updated");
     } catch {
-      setMessage("Failed to update profile");
+      toast.error("Failed to update profile");
     } finally {
       setSaving(false);
     }
@@ -38,15 +38,14 @@ export default function AccountPage() {
 
   async function handleChangePassword() {
     if (newPassword.length < 8) {
-      setMessage("Password must be at least 8 characters");
+      toast.error("Password must be at least 8 characters");
       return;
     }
     if (newPassword !== confirmPassword) {
-      setMessage("Passwords do not match");
+      toast.error("Passwords do not match");
       return;
     }
     setSaving(true);
-    setMessage(null);
     try {
       const { createClient } = await import("@/lib/supabase");
       const supabase = createClient();
@@ -56,9 +55,9 @@ export default function AccountPage() {
       if (error) throw error;
       setNewPassword("");
       setConfirmPassword("");
-      setMessage("Password changed");
+      toast.success("Password changed");
     } catch {
-      setMessage("Failed to change password");
+      toast.error("Failed to change password");
     } finally {
       setSaving(false);
     }
@@ -82,9 +81,7 @@ export default function AccountPage() {
         <section className="space-y-4">
           <h2 className="text-sm font-medium text-muted-foreground">Profile</h2>
           <div className="space-y-2">
-            <label htmlFor="full-name" className="text-sm font-medium">
-              Full Name
-            </label>
+            <Label htmlFor="full-name">Full Name</Label>
             <Input
               id="full-name"
               value={fullName}
@@ -92,8 +89,8 @@ export default function AccountPage() {
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Email</label>
-            <Input value={user.email} disabled className="opacity-60" />
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" value={user.email} disabled className="opacity-60" />
             <p className="text-xs text-muted-foreground">
               Email cannot be changed at this time.
             </p>
@@ -111,9 +108,7 @@ export default function AccountPage() {
             Change Password
           </h2>
           <div className="space-y-2">
-            <label htmlFor="new-pass" className="text-sm font-medium">
-              New Password
-            </label>
+            <Label htmlFor="new-pass">New Password</Label>
             <PasswordInput
               id="new-pass"
               value={newPassword}
@@ -123,9 +118,7 @@ export default function AccountPage() {
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="confirm-pass" className="text-sm font-medium">
-              Confirm Password
-            </label>
+            <Label htmlFor="confirm-pass">Confirm Password</Label>
             <PasswordInput
               id="confirm-pass"
               value={confirmPassword}
@@ -141,10 +134,6 @@ export default function AccountPage() {
             Change Password
           </Button>
         </section>
-
-        {message && (
-          <p className="text-sm text-muted-foreground">{message}</p>
-        )}
       </div>
       </div>
     </div>

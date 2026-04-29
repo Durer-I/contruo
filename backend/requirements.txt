@@ -34,6 +34,9 @@ Pillow>=11.0.0
 # Utilities
 python-dotenv>=1.0.1
 
+# Rate limiting (Redis-backed in prod, in-memory in dev)
+slowapi>=0.1.9
+
 # Export (Sprint 12)
 openpyxl>=3.1.0
 reportlab>=4.0.0

@@ -60,6 +60,8 @@ class MeasurementResponse(BaseModel):
     override_value: float | None
     label: str | None
     created_by: uuid.UUID
+    #: Optimistic-lock counter; clients pass it back via ``If-Match`` on PATCH.
+    version: int = 1
     created_at: datetime
     updated_at: datetime
     derived_quantities: list[DerivedQuantityItem] = Field(default_factory=list)
@@ -85,3 +87,6 @@ class MeasurementAggregates(BaseModel):
 class MeasurementListResponse(BaseModel):
     measurements: list[MeasurementResponse]
     aggregates: MeasurementAggregates | None = None
+    #: Opaque cursor (ISO timestamp + id) clients pass back as ``cursor`` to fetch
+    #: the next page. ``None`` when this page completed the list.
+    next_cursor: str | None = None

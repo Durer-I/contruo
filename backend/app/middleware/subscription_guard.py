@@ -63,8 +63,12 @@ async def enforce_org_subscription_state(
     if not sub:
         return
 
-    await billing_service.refresh_subscription_automatic_transitions(db, auth.org_id)
-    sub = await billing_service.get_subscription(db, auth.org_id)
+    # Apply automatic state transitions in-place; avoid a second SELECT round-trip
+    # by relying on the (refresh-aware) status returned alongside the row.
+    refreshed = await billing_service.refresh_subscription_automatic_transitions(
+        db, auth.org_id
+    )
+    sub = refreshed or sub
     if not sub:
         return
 

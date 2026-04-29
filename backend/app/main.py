@@ -3,21 +3,31 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.api.router import api_router
-from app.middleware.error_handler import register_error_handlers
+from app.middleware.error_handler import RequestIdMiddleware, register_error_handlers
+from app.middleware.rate_limit import register_rate_limiter
 
 settings = get_settings()
+settings.assert_production_secrets()
 
 
 def create_app() -> FastAPI:
+    in_prod = settings.is_production
+
     app = FastAPI(
         title="Contruo API",
         description="Construction takeoff platform API",
         version="0.1.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        # Hide interactive docs and machine-readable schema in production —
+        # they make route enumeration trivial for opportunistic scanners.
+        docs_url=None if in_prod else "/docs",
+        redoc_url=None if in_prod else "/redoc",
+        openapi_url=None if in_prod else "/openapi.json",
     )
 
     register_error_handlers(app)
+    register_rate_limiter(app)
+
+    app.add_middleware(RequestIdMiddleware)
 
     app.include_router(api_router, prefix="/api/v1")
 
@@ -29,6 +39,7 @@ def create_app() -> FastAPI:
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
+            expose_headers=["x-request-id"],
         )
     else:
         app.add_middleware(
@@ -37,6 +48,7 @@ def create_app() -> FastAPI:
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
+            expose_headers=["x-request-id"],
         )
 
     return app

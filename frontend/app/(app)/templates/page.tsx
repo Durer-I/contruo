@@ -18,16 +18,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/providers/auth-provider";
 import { api, ApiError } from "@/lib/api";
+import { formatMeasurementTypeLabel } from "@/lib/condition-units";
 import { hasPermission, type Role } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import type { ConditionTemplateInfo } from "@/types/assembly";
-
-function typeLabel(t: string): string {
-  if (t === "linear") return "Linear";
-  if (t === "area") return "Area";
-  if (t === "count") return "Count";
-  return t;
-}
 
 function formatShortDate(iso: string): string {
   try {
@@ -230,7 +224,7 @@ export default function TemplatesPage() {
                           </span>
                         </div>
                         <div className="mt-0.5 flex flex-wrap gap-x-2 text-[10px] text-muted-foreground sm:hidden">
-                          <span>{typeLabel(t.measurement_type)}</span>
+                          <span>{formatMeasurementTypeLabel(t.measurement_type)}</span>
                           <span>·</span>
                           <span>{t.unit}</span>
                           <span>·</span>
@@ -238,7 +232,7 @@ export default function TemplatesPage() {
                         </div>
                       </td>
                       <td className="hidden px-3 py-2 text-muted-foreground sm:table-cell">
-                        {typeLabel(t.measurement_type)}
+                        {formatMeasurementTypeLabel(t.measurement_type)}
                       </td>
                       <td className="hidden px-3 py-2 font-mono text-xs text-muted-foreground md:table-cell">
                         {t.unit}

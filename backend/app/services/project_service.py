@@ -8,13 +8,14 @@ import logging
 from sqlalchemy import select, func, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.middleware.auth import AuthContext
 from app.models.project import Project
 from app.models.sheet import Sheet
 from app.models.user import User
 from app.models.guest_project_access import GuestProjectAccess
 from app.models.event_log import EventLog
 from app.services.event_service import log_event
-from app.middleware.error_handler import AppException, NotFoundException
+from app.middleware.error_handler import AppException, ForbiddenException, NotFoundException
 from app.utils import storage
 
 logger = logging.getLogger(__name__)
@@ -65,15 +66,68 @@ async def create_project(
     return project
 
 
-async def list_projects(db: AsyncSession, org_id: uuid.UUID) -> list[dict]:
+async def _guest_accessible_project_ids(
+    db: AsyncSession, org_id: uuid.UUID, user_id: uuid.UUID
+) -> set[uuid.UUID]:
+    """All project IDs a guest user has been explicitly granted access to in this org."""
+    stmt = select(GuestProjectAccess.project_id).where(
+        GuestProjectAccess.org_id == org_id,
+        GuestProjectAccess.user_id == user_id,
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return set(rows)
+
+
+async def assert_project_visible(
+    db: AsyncSession,
+    auth: AuthContext,
+    project_id: uuid.UUID,
+    *,
+    is_guest: bool | None = None,
+) -> None:
+    """Raise Forbidden if a guest user is reaching a project they don't have access to.
+
+    Owner/admin/estimator/viewer roles see everything in their own org; guests are
+    bound by ``guest_project_access`` rows.
+    """
+    if is_guest is None:
+        user = (
+            await db.execute(select(User.is_guest).where(User.id == auth.user_id))
+        ).scalar_one_or_none()
+        is_guest = bool(user)
+    if not is_guest:
+        return
+    allowed = await _guest_accessible_project_ids(db, auth.org_id, auth.user_id)
+    if project_id not in allowed:
+        raise ForbiddenException(
+            "You do not have access to this project. Ask the project owner to share it with you."
+        )
+
+
+async def list_projects(
+    db: AsyncSession,
+    org_id: uuid.UUID,
+    *,
+    user_id: uuid.UUID | None = None,
+) -> list[dict]:
     """List projects with sheet + member counts.
 
-    Member count is the number of active (non-deactivated) users in the org, since
-    we don't have per-project membership at MVP. Guest access adds guest users to
-    specific projects, but counting them would require joining guest_project_access
-    — defer until we have real per-project members.
+    For guest users we restrict the list to projects they have explicit
+    ``guest_project_access`` rows for. Member count is the number of active
+    (non-deactivated) users in the org.
     """
-    # Sheet counts per project
+    is_guest = False
+    allowed_pids: set[uuid.UUID] | None = None
+    if user_id is not None:
+        u = (
+            await db.execute(select(User.is_guest).where(User.id == user_id))
+        ).scalar_one_or_none()
+        is_guest = bool(u)
+        if is_guest:
+            allowed_pids = await _guest_accessible_project_ids(db, org_id, user_id)
+            if not allowed_pids:
+                return []
+
     sheet_counts_stmt = (
         select(Sheet.project_id, func.count(Sheet.id).label("c"))
         .where(Sheet.org_id == org_id)
@@ -89,6 +143,8 @@ async def list_projects(db: AsyncSession, org_id: uuid.UUID) -> list[dict]:
         .where(Project.org_id == org_id, Project.status == "active")
         .order_by(Project.updated_at.desc())
     )
+    if allowed_pids is not None:
+        projects_stmt = projects_stmt.where(Project.id.in_(allowed_pids))
     result = await db.execute(projects_stmt)
     projects = result.scalars().all()
 
@@ -129,12 +185,26 @@ async def count_active_org_members(db: AsyncSession, org_id: uuid.UUID) -> int:
     return int((await db.execute(stmt)).scalar_one() or 0)
 
 
-async def get_project(db: AsyncSession, org_id: uuid.UUID, project_id: uuid.UUID) -> Project:
+async def get_project(
+    db: AsyncSession,
+    org_id: uuid.UUID,
+    project_id: uuid.UUID,
+    *,
+    auth: AuthContext | None = None,
+) -> Project:
+    """Fetch a project enforcing org isolation, with optional guest-scope check.
+
+    Pass ``auth`` to enforce ``guest_project_access`` for guest roles. Existing
+    callers without ``auth`` get the historical behavior so we can adopt the new
+    enforcement incrementally.
+    """
     stmt = select(Project).where(Project.id == project_id, Project.org_id == org_id)
     result = await db.execute(stmt)
     project = result.scalar_one_or_none()
     if not project:
         raise NotFoundException("project", str(project_id))
+    if auth is not None and auth.role == "guest":
+        await assert_project_visible(db, auth, project_id, is_guest=True)
     return project
 
 

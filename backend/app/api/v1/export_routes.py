@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from celery.result import AsyncResult
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
+from starlette.responses import Response
 
 from app.middleware.auth import AuthContext
 from app.middleware.error_handler import AppException, NotFoundException
+from app.middleware.rate_limit import limiter
 from app.schemas.export import ExportQueuedResponse, ExportRequest, ExportStatusResponse
 from app.services.permission_service import Permission, require_permission
 from app.tasks.celery_app import celery_app
@@ -18,7 +20,10 @@ router = APIRouter(tags=["export"])
 
 
 @router.post("/projects/{project_id}/export", response_model=ExportQueuedResponse, status_code=202)
+@limiter.limit("10/minute;100/hour")
 async def queue_project_export(
+    request: Request,
+    response: Response,
     project_id: str,
     body: ExportRequest,
     auth: AuthContext = Depends(require_permission(Permission.EXPORT_DATA)),

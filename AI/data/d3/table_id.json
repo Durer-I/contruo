@@ -1,0 +1,380 @@
+[
+    {
+        "title": "INTERIOR FINISH SCHEDULE, LEGENDS AND DETAILS",
+        "page": 31,
+        "tables": [
+            {
+                "file_id": "file-7BN5Yrm2cASHiWtqPNrNWF",
+                "bbox": {
+                    "x0": 89.52,
+                    "top": 71.92000000000007,
+                    "x1": 2682.43625,
+                    "bottom": 2087.88
+                }
+            },
+            {
+                "file_id": "file-AMvVYrcMGcusnSFjptk8Ub",
+                "bbox": {
+                    "x0": 107.44411764705882,
+                    "top": 324.2533333333333,
+                    "x1": 146.8352795031056,
+                    "bottom": 358.78499999999997
+                }
+            },
+            {
+                "file_id": "file-6X9ju9C8mqU6eqS4ZRMbDC",
+                "bbox": {
+                    "x0": 107.44411764705882,
+                    "top": 428.38666666666666,
+                    "x1": 146.8352795031056,
+                    "bottom": 457.79999999999995
+                }
+            },
+            {
+                "file_id": "file-EwEDQWzmJLUPsSpJ3yGitP",
+                "bbox": {
+                    "x0": 107.44411764705882,
+                    "top": 474.72,
+                    "x1": 146.8352795031056,
+                    "bottom": 506.28
+                }
+            },
+            {
+                "file_id": "file-CZHtbj6kpXrNSjFppXQTJn",
+                "bbox": {
+                    "x0": 107.44411764705882,
+                    "top": 521.8800000000001,
+                    "x1": 146.8352795031056,
+                    "bottom": 553.3199999999999
+                }
+            },
+            {
+                "file_id": "file-VVjGfvRDMCZdu6r58rsABp",
+                "bbox": {
+                    "x0": 2718.3599999999997,
+                    "top": 989.8800000000001,
+                    "x1": 2988.3599999999997,
+                    "bottom": 1035.3085714285714
+                }
+            },
+            {
+                "file_id": "file-4v2owdkBcFkf9GQouSdT9K",
+                "bbox": {
+                    "x0": 588.9230769230768,
+                    "top": 1007.8800000000001,
+                    "x1": 601.3199999999999,
+                    "bottom": 1179.96
+                }
+            }
+        ]
+    },
+    {
+        "title": "TOILET ACCESSORY SCHEDULE & MOUNTING HEIGHTS",
+        "page": 57,
+        "tables": [
+            {
+                "file_id": "file-9jxfumHnsUnEXVXzXm2gXp",
+                "bbox": {
+                    "x0": 89.52,
+                    "top": 71.88000000000011,
+                    "x1": 2681.6652631578945,
+                    "bottom": 2087.88
+                }
+            },
+            {
+                "file_id": "file-KTqYrdT3Wubz7L7t4yTC5H",
+                "bbox": {
+                    "x0": 1430.208,
+                    "top": 225.81000000000006,
+                    "x1": 1500.24,
+                    "bottom": 381.071186440678
+                }
+            },
+            {
+                "file_id": "file-WXvA8mxQu1sECpKZdmsZe2",
+                "bbox": {
+                    "x0": 1609.8584615384616,
+                    "top": 246.63428571428568,
+                    "x1": 1656.0953846153845,
+                    "bottom": 381.071186440678
+                }
+            },
+            {
+                "file_id": "file-H9QrB4Pa1HgxMpfbrzQJCV",
+                "bbox": {
+                    "x0": 2045.08,
+                    "top": 260.01500000000004,
+                    "x1": 2090.904,
+                    "bottom": 366.816
+                }
+            },
+            {
+                "file_id": "file-NhpBQUbnX8EAQAUwosMvvc",
+                "bbox": {
+                    "x0": 262.28,
+                    "top": 646.6483333333333,
+                    "x1": 331.25333333333333,
+                    "bottom": 712.1999999999999
+                }
+            },
+            {
+                "file_id": "file-8QVUshuNBSuM1hHHTQhJXk",
+                "bbox": {
+                    "x0": 1107.35109375,
+                    "top": 673.8631578947368,
+                    "x1": 1154.7549999999999,
+                    "bottom": 729.1771428571428
+                }
+            },
+            {
+                "file_id": "file-52mJxZmUBjLvEeSUW6cjwZ",
+                "bbox": {
+                    "x0": 2175.12,
+                    "top": 747.9899999999999,
+                    "x1": 2232.6479999999997,
+                    "bottom": 989.7851785714286
+                }
+            },
+            {
+                "file_id": "file-JpPrX7hJpdQyQhEdjG3Uom",
+                "bbox": {
+                    "x0": 382.9252173913044,
+                    "top": 758.568,
+                    "x1": 562.1228571428571,
+                    "bottom": 851.0799999999999
+                }
+            },
+            {
+                "file_id": "file-KqwAQFrVJCCHZKwAgUKVj9",
+                "bbox": {
+                    "x0": 1107.35109375,
+                    "top": 767.88,
+                    "x1": 1170.3466666666668,
+                    "bottom": 818.7599999999999
+                }
+            },
+            {
+                "file_id": "file-8KpGWDUiwsVhHe9nYnF8Dd",
+                "bbox": {
+                    "x0": 1415.04,
+                    "top": 767.88,
+                    "x1": 1425.28,
+                    "bottom": 805.4142857142857
+                }
+            },
+            {
+                "file_id": "file-9TUQ7ZLi7sNpFcQFykTRjr",
+                "bbox": {
+                    "x0": 262.28,
+                    "top": 787.1999999999999,
+                    "x1": 331.25333333333333,
+                    "bottom": 813.5828571428572
+                }
+            },
+            {
+                "file_id": "file-JKrCFiTHjtd8cdz8PYE241",
+                "bbox": {
+                    "x0": 262.28,
+                    "top": 851.0799999999999,
+                    "x1": 331.25333333333333,
+                    "bottom": 989.7851785714286
+                }
+            },
+            {
+                "file_id": "file-5PgRwimT2p9x1ktPkT8CxB",
+                "bbox": {
+                    "x0": 2054.81625,
+                    "top": 881.76,
+                    "x1": 2107.933928571428,
+                    "bottom": 894.8399999999999
+                }
+            },
+            {
+                "file_id": "file-Uv4CzNrF2t5NFHSnFCdsNT",
+                "bbox": {
+                    "x0": 1194.828,
+                    "top": 989.7851785714286,
+                    "x1": 1401.1,
+                    "bottom": 1167.48
+                }
+            },
+            {
+                "file_id": "file-Man7LnCcULjCrpgftQzFsj",
+                "bbox": {
+                    "x0": 1486.6105263157895,
+                    "top": 989.7851785714286,
+                    "x1": 1555.3865753424657,
+                    "bottom": 1129.2
+                }
+            },
+            {
+                "file_id": "file-4jHm3KWcNxPgPZ4X5w5mRe",
+                "bbox": {
+                    "x0": 2718.3599999999997,
+                    "top": 989.7851785714286,
+                    "x1": 2988.3599999999997,
+                    "bottom": 1033.302857142857
+                }
+            },
+            {
+                "file_id": "file-619LBzHF6aoVqbx5aPUY5Z",
+                "bbox": {
+                    "x0": 1440.5123076923078,
+                    "top": 1362.84,
+                    "x1": 2681.6652631578945,
+                    "bottom": 1636.56
+                }
+            }
+        ]
+    },
+    {
+        "title": "DOOR SCHEDULE, DOOR AND FRAME TYPES",
+        "page": 64,
+        "tables": [
+            {
+                "file_id": "file-3HQYGRCNLWm2LNeGC1Jzn2",
+                "bbox": {
+                    "x0": 89.52,
+                    "top": 71.88000000000011,
+                    "x1": 2682.08,
+                    "bottom": 2087.88
+                }
+            },
+            {
+                "file_id": "file-7RuAQqJpLYFCfBQm2pc2zJ",
+                "bbox": {
+                    "x0": 113.39999999999999,
+                    "top": 119.40000000000009,
+                    "x1": 1185.7257142857143,
+                    "bottom": 1404.6
+                }
+            },
+            {
+                "file_id": "file-HK1Ro6fK2Gs8isSEa4BDS7",
+                "bbox": {
+                    "x0": 2718.3599999999997,
+                    "top": 989.8800000000001,
+                    "x1": 2988.3599999999997,
+                    "bottom": 1033.08
+                }
+            },
+            {
+                "file_id": "file-PTxV4PnrDeZndf6wnNTaoZ",
+                "bbox": {
+                    "x0": 2246.0899999999997,
+                    "top": 1046.4834782608698,
+                    "x1": 2411.6049999999996,
+                    "bottom": 1270.2
+                }
+            },
+            {
+                "file_id": "file-Rij7XUX7yq3fSuJinPcwzv",
+                "bbox": {
+                    "x0": 1649.184,
+                    "top": 1052.52,
+                    "x1": 1734.684,
+                    "bottom": 1081.0984615384616
+                }
+            },
+            {
+                "file_id": "file-86fXwMPdtvBSF6SL2YYzcB",
+                "bbox": {
+                    "x0": 1829.184,
+                    "top": 1052.52,
+                    "x1": 1995.684,
+                    "bottom": 1270.2
+                }
+            },
+            {
+                "file_id": "file-DG3Vnr8hFQxdFMtYihadke",
+                "bbox": {
+                    "x0": 1207.65,
+                    "top": 1496.04,
+                    "x1": 1225.8065753424655,
+                    "bottom": 1516.6457142857143
+                }
+            },
+            {
+                "file_id": "file-NLmzvUVNJ5mm5Q5t9wYPEL",
+                "bbox": {
+                    "x0": 983.448,
+                    "top": 1516.6457142857143,
+                    "x1": 1416.3600000000001,
+                    "bottom": 1911.9731034482757
+                }
+            },
+            {
+                "file_id": "file-E18xwKEaR3ibG1ws2VtG19",
+                "bbox": {
+                    "x0": 1022.4514285714286,
+                    "top": 1534.2,
+                    "x1": 1400.8285714285714,
+                    "bottom": 1911.9731034482757
+                }
+            },
+            {
+                "file_id": "file-JjdM3PAC9fwivtSoBPpqhF",
+                "bbox": {
+                    "x0": 1508.297142857143,
+                    "top": 1583.7733333333333,
+                    "x1": 1724.6742857142856,
+                    "bottom": 1911.9731034482757
+                }
+            },
+            {
+                "file_id": "file-FQvD91B5jhgMGt4S2aHjbk",
+                "bbox": {
+                    "x0": 1940.5999999999997,
+                    "top": 1618.5999999999997,
+                    "x1": 2153.04,
+                    "bottom": 1656.1885714285713
+                }
+            },
+            {
+                "file_id": "file-XbHJ4sy8xbE5ZLswRTR7fD",
+                "bbox": {
+                    "x0": 121.48799999999999,
+                    "top": 1697.31,
+                    "x1": 232.55999999999997,
+                    "bottom": 1911.9731034482757
+                }
+            },
+            {
+                "file_id": "file-V2baCbu3hFTiDjkZQj5GuP",
+                "bbox": {
+                    "x0": 454.26,
+                    "top": 1697.31,
+                    "x1": 592.488,
+                    "bottom": 1911.9731034482757
+                }
+            },
+            {
+                "file_id": "file-CejctkhYpkitWpqi7oummY",
+                "bbox": {
+                    "x0": 1940.5999999999997,
+                    "top": 1697.31,
+                    "x1": 2153.04,
+                    "bottom": 1911.9731034482757
+                }
+            },
+            {
+                "file_id": "file-3KRbZa1APBXLeAabHyqYiG",
+                "bbox": {
+                    "x0": 2292.7384615384613,
+                    "top": 1697.31,
+                    "x1": 2615.0215384615385,
+                    "bottom": 1911.9731034482757
+                }
+            },
+            {
+                "file_id": "file-EiXPibtYqUnnfDhfkmMiS3",
+                "bbox": {
+                    "x0": 266.448,
+                    "top": 1804.2862825788752,
+                    "x1": 401.88,
+                    "bottom": 1911.9731034482757
+                }
+            }
+        ]
+    }
+]

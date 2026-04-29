@@ -1,0 +1,98 @@
+[
+    {
+        "CONC-1 POLISHED CONCRETE": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 201.77999999999997,
+            "bottom": 237.7800000000002
+        }
+    },
+    {
+        "CONC-2 POLISHED STAINED CONCRETE -": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 255.77999999999997,
+            "bottom": 291.7800000000002
+        }
+    },
+    {
+        "CPT-1 CARPET BENTLEY DARK OR TILE APPROVED MILLS (18\" AFTER x 36\"": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 309.78,
+            "bottom": 345.7800000000002
+        }
+    },
+    {
+        "CPT-2 EQUAL) CARPET BENTLEY WORTHY TILE OR MILLS APPROVED (18\" BUZZ x 36\"": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 363.78,
+            "bottom": 399.7800000000002
+        }
+    },
+    {
+        "CPT-3 EQUAL) CARPET BENTLEY VISION OR TILE MILLS APPROVED (18\" NIGHT x 36\"": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 417.78,
+            "bottom": 453.7800000000002
+        }
+    },
+    {
+        "CPT-04 EQUAL) CARPET BENTLEY APPROVED TILE MILLS EQUAL) (18\" BURNISH x 36\" OR": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 471.78,
+            "bottom": 507.7800000000002
+        }
+    },
+    {
+        "CPT-05 CARPET BENTLEY APPROVED TILE MILLS EQUAL) (18\" MISFIT x 36\" OR": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 525.78,
+            "bottom": 561.7800000000002
+        }
+    },
+    {
+        "CPT-06 CARPET BENTLEY OR APPROVED TILE MILLS (18\" EQUAL) TYPECAST x 36\"": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 579.78,
+            "bottom": 615.7800000000002
+        }
+    },
+    {
+        "CPT-07 WALKOFF (MOHAWK APPROVED CARPET FIRST EQUAL) STEP TILE II OR": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 633.78,
+            "bottom": 669.7800000000002
+        }
+    },
+    {
+        "ESD-1 STATIC (SHAW GREYLOCK SUMMIT CONTROL OR APPROVED SERIES FLOORING": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 687.78,
+            "bottom": 723.7800000000002
+        }
+    },
+    {
+        "FTL-1 EQUAL) FLOOR METRO TILE NIGHTSKY TILE 2.0 24\" (BEDROSIAN x OR 24\" FLOOR": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 741.78,
+            "bottom": 777.7800000000002
+        }
+    },
+    {
+        "A304 RESTROOM MEN'S N142": {
+            "x0": 1268.58,
+            "x1": 1304.5800000000002,
+            "top": 1836.18,
+            "bottom": 1872.18
+        }
+    }
+]

@@ -1,7 +1,12 @@
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from app.models.plan import Plan as PlanModel
+    from app.models.sheet import Sheet as SheetModel
 
 
 class PlanResponse(BaseModel):
@@ -18,6 +23,24 @@ class PlanResponse(BaseModel):
     uploaded_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
+
+    @classmethod
+    def from_model(cls, p: "PlanModel") -> "PlanResponse":
+        """Single conversion path so adding a new column updates every endpoint at once."""
+        return cls(
+            id=p.id,
+            project_id=p.project_id,
+            filename=p.filename,
+            file_size=p.file_size,
+            page_count=p.page_count,
+            status=p.status,
+            processed_pages=p.processed_pages,
+            processing_substep=p.processing_substep,
+            error_message=p.error_message,
+            uploaded_by=p.uploaded_by,
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+        )
 
 
 class PlanListResponse(BaseModel):
@@ -60,6 +83,25 @@ class SheetListItemResponse(BaseModel):
     thumbnail_url: str | None = None
     created_at: datetime
     vector_snap_segment_count: int = 0
+
+    @classmethod
+    def from_model(cls, s: "SheetModel", *, thumbnail_url: str | None = None) -> "SheetListItemResponse":
+        return cls(
+            id=s.id,
+            plan_id=s.plan_id,
+            project_id=s.project_id,
+            page_number=s.page_number,
+            sheet_name=s.sheet_name,
+            scale_value=s.scale_value,
+            scale_unit=s.scale_unit,
+            scale_label=s.scale_label,
+            scale_source=s.scale_source,
+            width_px=s.width_px,
+            height_px=s.height_px,
+            thumbnail_url=thumbnail_url,
+            created_at=s.created_at,
+            vector_snap_segment_count=s.vector_snap_segment_count,
+        )
 
 
 class SheetThumbnailUrlsRequest(BaseModel):

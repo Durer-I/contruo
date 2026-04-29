@@ -1,0 +1,392 @@
+[
+    {
+        "title": "DOOR AND FRAME SCHEDULE & ELEVATIONS",
+        "page": 38,
+        "tables": [
+            {
+                "file_id": "file-LXg8ASy4aSvhSmmQjs7KDy",
+                "bbox": {
+                    "x0": 1132.6115625000002,
+                    "top": 126.42000000000007,
+                    "x1": 2307.7799999999997,
+                    "bottom": 976.9200000000001
+                }
+            }
+        ]
+    },
+    {
+        "title": "PLUMBING SCHEDULES 12654 000",
+        "page": 59,
+        "tables": [
+            {
+                "file_id": "file-BzwW1eHPn5gWtDLqwyUeip",
+                "bbox": {
+                    "x0": 282.96002782088885,
+                    "top": 104.88101298000015,
+                    "x1": 2053.037187057778,
+                    "bottom": 207.480667104
+                }
+            },
+            {
+                "file_id": "file-8MW9zsUwTE8xVx14kN1vcf",
+                "bbox": {
+                    "x0": 282.96002782088885,
+                    "top": 221.6010352400001,
+                    "x1": 2053.037187057778,
+                    "bottom": 398.3046674064001
+                }
+            },
+            {
+                "file_id": "file-YWzNfu7AFJJdDDnznsrP2u",
+                "bbox": {
+                    "x0": 282.96002782088885,
+                    "top": 427.01964138000005,
+                    "x1": 2053.037187057778,
+                    "bottom": 518.5206452399999
+                }
+            },
+            {
+                "file_id": "file-KUJxtBUHxxXAMu2BAWLcYC",
+                "bbox": {
+                    "x0": 282.96002782088885,
+                    "top": 534.3618920400002,
+                    "x1": 2053.037187057778,
+                    "bottom": 612.376475385
+                }
+            },
+            {
+                "file_id": "file-T6DuBwLst3Z2omFm4eQrWC",
+                "bbox": {
+                    "x0": 282.96002782088885,
+                    "top": 630.75160125,
+                    "x1": 2053.037187057778,
+                    "bottom": 737.011102542353
+                }
+            },
+            {
+                "file_id": "file-BztrgKGj2Ed9AG8iEHNAjn",
+                "bbox": {
+                    "x0": 1684.56,
+                    "top": 1620.00070632,
+                    "x1": 2028.9588,
+                    "bottom": 1697.6401218
+                }
+            }
+        ]
+    },
+    {
+        "title": "MECHANICAL DETAILS & SCHEDULES",
+        "page": 79,
+        "tables": [
+            {
+                "file_id": "file-9q8o5af6RzTJ8PTQ6DDutk",
+                "bbox": {
+                    "x0": 821.8791993527999,
+                    "top": 65.03734511999983,
+                    "x1": 2702.4779392592595,
+                    "bottom": 200.39938387034482
+                }
+            },
+            {
+                "file_id": "file-AVkeRj2wmgy3k9LSweBSvV",
+                "bbox": {
+                    "x0": 1020.2400000000001,
+                    "top": 305.1659044799999,
+                    "x1": 2702.4779392592595,
+                    "bottom": 440.64093701538474
+                }
+            },
+            {
+                "file_id": "file-8tfoWuxN3LKcTgz25eZoLz",
+                "bbox": {
+                    "x0": 416.88,
+                    "top": 501.9592568759999,
+                    "x1": 1250.0399999999997,
+                    "bottom": 740.52
+                }
+            },
+            {
+                "file_id": "file-2HjWMbaf3xxCMS1P32yWPB",
+                "bbox": {
+                    "x0": 1303.68,
+                    "top": 501.9592568759999,
+                    "x1": 2702.4779392592595,
+                    "bottom": 597.3028656911429
+                }
+            },
+            {
+                "file_id": "file-MEyGPt4ifm86ZSLSQXRboJ",
+                "bbox": {
+                    "x0": 1410.5999999999997,
+                    "top": 688.1907157956923,
+                    "x1": 2702.4779392592595,
+                    "bottom": 792.3594719790001
+                }
+            },
+            {
+                "file_id": "file-VoctPHxA8XYXgaVRRPLMX7",
+                "bbox": {
+                    "x0": 1434.0,
+                    "top": 830.0358007680002,
+                    "x1": 2702.4779392592595,
+                    "bottom": 922.7994270537142
+                }
+            },
+            {
+                "file_id": "file-TUZaL4vEaNQVWve7M1dWYX",
+                "bbox": {
+                    "x0": 1419.135,
+                    "top": 979.795756152,
+                    "x1": 2702.4779392592595,
+                    "bottom": 1113.59999794
+                }
+            },
+            {
+                "file_id": "file-1Nc6enpUDXwnXSbtozoBu2",
+                "bbox": {
+                    "x0": 1566.029565465,
+                    "top": 1199.1585749160001,
+                    "x1": 2702.4779392592595,
+                    "bottom": 1316.619586746
+                }
+            },
+            {
+                "file_id": "file-38ko8FZgsKx9Xtt5xirphK",
+                "bbox": {
+                    "x0": 1322.3014616879998,
+                    "top": 1393.919612232,
+                    "x1": 2702.4779392592595,
+                    "bottom": 2012.3998567784572
+                }
+            }
+        ]
+    },
+    {
+        "title": "MECHANICAL EQUIPMENT SCHEDULES",
+        "page": 105,
+        "tables": [
+            {
+                "file_id": "file-98zWATtbKmQJcVDdwSXQ7g",
+                "bbox": {
+                    "x0": 937.8000000000001,
+                    "top": 455.8798443599999,
+                    "x1": 2392.91172,
+                    "bottom": 878.1610590290526
+                }
+            }
+        ]
+    },
+    {
+        "title": "LIGHTING FIXTURE & CONTROL SCHEDULE",
+        "page": 106,
+        "tables": [
+            {
+                "file_id": "file-3XVTXLcH8mNTe4E9FXPhBL",
+                "bbox": {
+                    "x0": 107.8799566248,
+                    "top": 35.90644464000015,
+                    "x1": 2735.8767599999996,
+                    "bottom": 2123.8795291872
+                }
+            },
+            {
+                "file_id": "file-7hQdXmSVayFc9mTQpiphmE",
+                "bbox": {
+                    "x0": 1280.1599999999999,
+                    "top": 403.6806890400003,
+                    "x1": 2390.4080399999993,
+                    "bottom": 774.7794252450001
+                }
+            },
+            {
+                "file_id": "file-8Hdw61xReWza3QDUG7K9Gi",
+                "bbox": {
+                    "x0": 646.4399999999999,
+                    "top": 849.7176277500002,
+                    "x1": 2390.4080399999993,
+                    "bottom": 2072.1595453636
+                }
+            }
+        ]
+    },
+    {
+        "title": "ELECTRICAL PANELBOARD SCHEDULES",
+        "page": 107,
+        "tables": [
+            {
+                "file_id": "file-4t89juo7RLFygh7ieEA7tJ",
+                "bbox": {
+                    "x0": 107.8799566248,
+                    "top": 35.88102650400024,
+                    "x1": 2735.8767599999996,
+                    "bottom": 2123.8795291872
+                }
+            },
+            {
+                "file_id": "file-JarfrNqzoVSbu4QauD2tYt",
+                "bbox": {
+                    "x0": 339.9599803150243,
+                    "top": 107.56067389333344,
+                    "x1": 1203.9599328354145,
+                    "bottom": 743.8814133600001
+                }
+            },
+            {
+                "file_id": "file-33AoJNQigK2MNyufFunTg3",
+                "bbox": {
+                    "x0": 1347.960009231795,
+                    "top": 190.44621032,
+                    "x1": 2211.96216,
+                    "bottom": 743.8814133600001
+                }
+            },
+            {
+                "file_id": "file-PuqnoHbQbRYxbaUqbhKi2Z",
+                "bbox": {
+                    "x0": 339.9599803150243,
+                    "top": 779.8804990100001,
+                    "x1": 1203.9599328354145,
+                    "bottom": 1416.8707010700666
+                }
+            },
+            {
+                "file_id": "file-MHxDrG1wvvSPqvX7dzDJKJ",
+                "bbox": {
+                    "x0": 1347.960009231795,
+                    "top": 779.8804990100001,
+                    "x1": 2211.96216,
+                    "bottom": 1416.8707010700666
+                }
+            },
+            {
+                "file_id": "file-T54Q3nDmToGD8CPmAJ269B",
+                "bbox": {
+                    "x0": 339.9599803150243,
+                    "top": 1451.880112621,
+                    "x1": 1203.9599328354145,
+                    "bottom": 2087.8794843672
+                }
+            },
+            {
+                "file_id": "file-HMWWMk34QHAsNt8KkwnDP7",
+                "bbox": {
+                    "x0": 1347.960009231795,
+                    "top": 1451.880112621,
+                    "x1": 2211.96216,
+                    "bottom": 2087.8794843672
+                }
+            }
+        ]
+    },
+    {
+        "title": "ELECTRICAL PANELBOARD SCHEDULES",
+        "page": 108,
+        "tables": [
+            {
+                "file_id": "file-D73fkKcSBYjHgkF6D69ffW",
+                "bbox": {
+                    "x0": 339.95999415827583,
+                    "top": 108.94085940800018,
+                    "x1": 1203.9599416822757,
+                    "bottom": 662.8807933200002
+                }
+            },
+            {
+                "file_id": "file-Xw1pq16bbo9iHgMY3w17zt",
+                "bbox": {
+                    "x0": 1347.9600305872132,
+                    "top": 108.94085940800018,
+                    "x1": 2211.96216,
+                    "bottom": 662.8807933200002
+                }
+            },
+            {
+                "file_id": "file-SD2rbmD7y83nynkQHqGacT",
+                "bbox": {
+                    "x0": 339.95999415827583,
+                    "top": 698.8811171600001,
+                    "x1": 1203.9599416822757,
+                    "bottom": 1334.8799059028572
+                }
+            },
+            {
+                "file_id": "file-X3xRG3feF4zsg8FaSvpWHS",
+                "bbox": {
+                    "x0": 1347.9600305872132,
+                    "top": 698.8811171600001,
+                    "x1": 2211.96216,
+                    "bottom": 1417.3660516051
+                }
+            },
+            {
+                "file_id": "file-C4fChSKJAS1apKkiXZHJGi",
+                "bbox": {
+                    "x0": 339.95999415827583,
+                    "top": 1451.880112621,
+                    "x1": 1203.9599416822757,
+                    "bottom": 2087.8794843672
+                }
+            },
+            {
+                "file_id": "file-5bJ11SE6NkGkAQc5nGqDHf",
+                "bbox": {
+                    "x0": 1347.9600305872132,
+                    "top": 1451.880112621,
+                    "x1": 2211.96216,
+                    "bottom": 2087.8794843672
+                }
+            }
+        ]
+    },
+    {
+        "title": "SECURITY SYMBOLS LEGEND, NOTES AND SCHEDULES",
+        "page": 129,
+        "tables": [
+            {
+                "file_id": "file-5dP7CDBh5fUAnJE7z1eRCt",
+                "bbox": {
+                    "x0": 653.840337196,
+                    "top": 53.87686300000011,
+                    "x1": 1742.1063343466667,
+                    "bottom": 292.3518001800001
+                }
+            },
+            {
+                "file_id": "file-DCwj1fvK3EAw9HvBkNU1Ts",
+                "bbox": {
+                    "x0": 1751.3997586171429,
+                    "top": 53.87686300000011,
+                    "x1": 2223.83508,
+                    "bottom": 1061.8825163400002
+                }
+            },
+            {
+                "file_id": "file-7r1aMTTEccE9VCK13Lb5op",
+                "bbox": {
+                    "x0": 653.840337196,
+                    "top": 324.60000000000014,
+                    "x1": 1742.1063343466667,
+                    "bottom": 457.9200000000001
+                }
+            },
+            {
+                "file_id": "file-EuXQy3Mbzp1QZLbXt9BVHW",
+                "bbox": {
+                    "x0": 761.657142857143,
+                    "top": 468.84000000000015,
+                    "x1": 1742.1063343466667,
+                    "bottom": 693.8400000000001
+                }
+            },
+            {
+                "file_id": "file-4QBjM5nNHzyJmifoSY48CG",
+                "bbox": {
+                    "x0": 2211.04284,
+                    "top": 1121.460668955,
+                    "x1": 2714.5228285714284,
+                    "bottom": 1239.6304845569998
+                }
+            }
+        ]
+    }
+]

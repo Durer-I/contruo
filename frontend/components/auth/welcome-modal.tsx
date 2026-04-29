@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -36,20 +36,37 @@ const STEPS = [
 ];
 
 export function WelcomeModal() {
-  const [state, setState] = useState({ synced: false, open: false });
+  // Stay closed during SSR / first paint to avoid a flash; sync from localStorage
+  // in an effect (no setState during render — that violated Rules of React and
+  // could double-trigger under Strict Mode).
+  const [open, setOpen] = useState(false);
 
-  if (typeof window !== "undefined" && !state.synced) {
-    const dismissed = localStorage.getItem(DISMISSED_KEY);
-    setState({ synced: true, open: !dismissed });
-  }
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!localStorage.getItem(DISMISSED_KEY)) {
+      setOpen(true);
+    }
+  }, []);
+
+  const persistDismissed = () => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(DISMISSED_KEY, "true");
+    }
+  };
 
   const handleDismiss = () => {
-    localStorage.setItem(DISMISSED_KEY, "true");
-    setState((s) => ({ ...s, open: false }));
+    persistDismissed();
+    setOpen(false);
   };
 
   return (
-    <Dialog open={state.open} onOpenChange={(isOpen) => !isOpen && handleDismiss()}>
+    <Dialog
+      open={open}
+      onOpenChange={(isOpen) => {
+        setOpen(isOpen);
+        if (!isOpen) persistDismissed();
+      }}
+    >
       <DialogContent className="max-w-md">
         <DialogTitle className="text-xl font-semibold">
           Welcome to Contruo

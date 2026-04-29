@@ -14,7 +14,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 import { api, ApiError } from "@/lib/api";
+import { formatMeasurementTypeLabel } from "@/lib/condition-units";
 import { cn } from "@/lib/utils";
 import type {
   ConditionTemplateAssemblySnapshotItem,
@@ -31,13 +34,6 @@ function newRowKey(): string {
     return globalThis.crypto.randomUUID();
   }
   return `row-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function typeLabel(t: string): string {
-  if (t === "linear") return "Linear";
-  if (t === "area") return "Area";
-  if (t === "count") return "Count";
-  return t;
 }
 
 type FormState = {
@@ -254,7 +250,7 @@ export function EditConditionTemplateDialog({
           <DialogTitle>Edit template</DialogTitle>
           <DialogDescription>
             Update the org library snapshot. Measurement type stays{" "}
-            <span className="font-medium text-foreground">{typeLabel(measurementType)}</span> (change
+            <span className="font-medium text-foreground">{formatMeasurementTypeLabel(measurementType)}</span> (change
             by re-saving from a project condition if needed).
           </DialogDescription>
         </DialogHeader>
@@ -305,11 +301,7 @@ export function EditConditionTemplateDialog({
                   <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                     Line style
                   </span>
-                  <select
-                    className={cn(
-                      "h-8 w-full rounded-md border border-input bg-background px-2 text-sm",
-                      "outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                    )}
+                  <NativeSelect
                     value={form.line_style}
                     onChange={(e) =>
                       setForm((f) => (f ? { ...f, line_style: e.target.value } : f))
@@ -320,7 +312,7 @@ export function EditConditionTemplateDialog({
                         {s}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </label>
                 <label className="block space-y-1">
                   <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -362,11 +354,7 @@ export function EditConditionTemplateDialog({
                   <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                     Fill pattern
                   </span>
-                  <select
-                    className={cn(
-                      "h-8 w-full rounded-md border border-input bg-background px-2 text-sm",
-                      "outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                    )}
+                  <NativeSelect
                     value={form.fill_pattern}
                     onChange={(e) =>
                       setForm((f) => (f ? { ...f, fill_pattern: e.target.value } : f))
@@ -377,7 +365,7 @@ export function EditConditionTemplateDialog({
                         {s}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </label>
               </>
             ) : null}
@@ -394,8 +382,8 @@ export function EditConditionTemplateDialog({
               <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                 Description
               </span>
-              <textarea
-                className="min-h-[72px] w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
+              <Textarea
+                className="text-xs"
                 value={form.description}
                 onChange={(e) =>
                   setForm((f) => (f ? { ...f, description: e.target.value } : f))

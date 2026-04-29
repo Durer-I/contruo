@@ -29,10 +29,14 @@ class AssemblyItemListResponse(BaseModel):
     items: list[AssemblyItemResponse]
 
 
+#: Hard cap on formula source length — protects the AST parser from pathological inputs.
+_FORMULA_MAX_LEN = 2000
+
+
 class CreateAssemblyItemRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     unit: str = Field(..., min_length=1, max_length=20)
-    formula: str = Field(..., min_length=1)
+    formula: str = Field(..., min_length=1, max_length=_FORMULA_MAX_LEN)
     description: str | None = Field(default=None, max_length=2000)
     sort_order: int | None = Field(default=None, ge=0)
 
@@ -40,7 +44,7 @@ class CreateAssemblyItemRequest(BaseModel):
 class UpdateAssemblyItemRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     unit: str | None = Field(default=None, min_length=1, max_length=20)
-    formula: str | None = Field(default=None, min_length=1)
+    formula: str | None = Field(default=None, min_length=1, max_length=_FORMULA_MAX_LEN)
     description: str | None = Field(default=None, max_length=2000)
     sort_order: int | None = Field(default=None, ge=0)
 
@@ -104,7 +108,7 @@ class ImportConditionTemplateRequest(BaseModel):
 
 
 class PreviewAssemblyFormulaRequest(BaseModel):
-    formula: str = Field(..., min_length=1)
+    formula: str = Field(..., min_length=1, max_length=_FORMULA_MAX_LEN)
     sample_primary: float = Field(default=100.0, description="Sample length / area / count value")
     sample_perimeter: float = Field(
         default=0.0,

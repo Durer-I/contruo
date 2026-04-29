@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 
 const UNITS = ["ft", "in", "m", "mm", "cm"] as const;
 
@@ -90,18 +91,17 @@ export function ScaleCalibrationDialog({
             <label htmlFor="real-unit" className="text-sm font-medium">
               Unit
             </label>
-            <select
+            <NativeSelect
               id="real-unit"
               value={unit}
               onChange={(e) => setUnit(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
             >
               {UNITS.map((u) => (
                 <option key={u} value={u}>
                   {u}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
         </div>
         {error && (

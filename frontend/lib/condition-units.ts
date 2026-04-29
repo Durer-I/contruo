@@ -30,3 +30,14 @@ export function defaultUnitForMeasurementType(mt: MeasurementType): string {
   const u = UNITS_BY_MEASUREMENT_TYPE[mt];
   return u[0] ?? "EA";
 }
+
+const MEASUREMENT_TYPE_LABELS: Record<MeasurementType, string> = {
+  linear: "Linear",
+  area: "Area",
+  count: "Count",
+};
+
+/** Single source of truth for the user-facing measurement-type label. */
+export function formatMeasurementTypeLabel(mt: MeasurementType | string): string {
+  return (MEASUREMENT_TYPE_LABELS as Record<string, string>)[mt] ?? mt;
+}

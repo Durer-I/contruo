@@ -31,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
   Tooltip,
   TooltipContent,
@@ -127,7 +128,8 @@ export interface QuantitiesPanelProps {
   canEdit: boolean;
 }
 
-const ROW_H = 28;
+// Matches the docs/design/design-system.md table-row height (32px).
+const ROW_H = 32;
 
 export const QuantitiesPanel = forwardRef<QuantitiesPanelHandle, QuantitiesPanelProps>(
   function QuantitiesPanel(
@@ -475,6 +477,11 @@ export const QuantitiesPanel = forwardRef<QuantitiesPanelHandle, QuantitiesPanel
                       className="flex shrink-0 items-center justify-center rounded p-0.5 hover:bg-muted"
                       onClick={() => toggleCond(c.id)}
                       aria-expanded={expandedConds.has(c.id)}
+                      aria-label={
+                        expandedConds.has(c.id)
+                          ? `Collapse ${c.name} group`
+                          : `Expand ${c.name} group`
+                      }
                     >
                       {expandedConds.has(c.id) ? (
                         <ChevronDown className="h-3.5 w-3.5" />
@@ -619,7 +626,7 @@ export const QuantitiesPanel = forwardRef<QuantitiesPanelHandle, QuantitiesPanel
                             />
                           }
                         >
-                          <PenLine className="h-1.5 w-1.5" />
+                          <PenLine className="h-3.5 w-3.5" />
                         </TooltipTrigger>
                         <TooltipContent side="bottom" className="text-[10px]">
                           Rename
@@ -828,7 +835,7 @@ export const QuantitiesPanel = forwardRef<QuantitiesPanelHandle, QuantitiesPanel
                   setCtx(null);
                 }}
               >
-                <PenLine className="h-1.5 w-1.5" />
+                <PenLine className="h-3.5 w-3.5" />
                 Rename…
               </button>
               <button
@@ -856,28 +863,31 @@ export const QuantitiesPanel = forwardRef<QuantitiesPanelHandle, QuantitiesPanel
               <label className="block px-2 py-0.5 text-[10px] text-muted-foreground">
                 Change condition
               </label>
-              <select
-                className="mx-1 mb-1 w-[calc(100%-8px)] rounded border border-border bg-background px-1 py-1"
-                value={
-                  measurements.find((x) => x.id === ctx.measurementId)?.condition_id ?? ""
-                }
-                onChange={(e) => {
-                  void onReassignCondition(ctx.measurementId, e.target.value);
-                  setCtx(null);
-                }}
-              >
-                {conditions
-                  .filter(
-                    (co) =>
-                      co.measurement_type ===
-                      measurements.find((x) => x.id === ctx.measurementId)?.measurement_type
-                  )
-                  .map((co) => (
-                    <option key={co.id} value={co.id}>
-                      {co.name}
-                    </option>
-                  ))}
-              </select>
+              <div className="mx-1 mb-1">
+                <NativeSelect
+                  size="sm"
+                  aria-label="Reassign condition"
+                  value={
+                    measurements.find((x) => x.id === ctx.measurementId)?.condition_id ?? ""
+                  }
+                  onChange={(e) => {
+                    void onReassignCondition(ctx.measurementId, e.target.value);
+                    setCtx(null);
+                  }}
+                >
+                  {conditions
+                    .filter(
+                      (co) =>
+                        co.measurement_type ===
+                        measurements.find((x) => x.id === ctx.measurementId)?.measurement_type
+                    )
+                    .map((co) => (
+                      <option key={co.id} value={co.id}>
+                        {co.name}
+                      </option>
+                    ))}
+                </NativeSelect>
+              </div>
               <button
                 type="button"
                 className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-destructive hover:bg-destructive/10"

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import {
   Select,
   SelectItem,
@@ -33,6 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator as ToolbarSeparator } from "@/components/ui/separator";
+import { toast } from "@/components/ui/sonner";
 import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type {
@@ -124,6 +126,20 @@ const PANEL_IDS = ["sheet-index", "viewer", "quantities"] as const;
 type ScaleFlowStep = "idle" | "intro" | "picking" | "input";
 
 type SheetStripMode = "list" | "thumbs";
+
+const MEASUREMENTS_RESYNC_MS = 350;
+
+function mergeMeasurementRow(prev: MeasurementInfo[], row: MeasurementInfo): MeasurementInfo[] {
+  const i = prev.findIndex((m) => m.id === row.id);
+  if (i === -1) return [...prev, row];
+  const next = [...prev];
+  next[i] = row;
+  return next;
+}
+
+function removeMeasurementIds(prev: MeasurementInfo[], ids: ReadonlySet<string>): MeasurementInfo[] {
+  return prev.filter((m) => !ids.has(m.id));
+}
 
 export function PlanViewerWorkspace({
   projectId,
@@ -388,10 +404,27 @@ export function PlanViewerWorkspace({
 
   const loadProjectMeasurements = useCallback(async () => {
     try {
-      const r = await api.get<{ measurements: MeasurementInfo[] }>(
-        `/api/v1/projects/${projectId}/measurements`
-      );
-      setProjectMeasurements(r.measurements);
+      // Backend now paginates with ``next_cursor``; loop until exhausted so
+      // large projects still surface the complete set in the panel.
+      type Page = {
+        measurements: MeasurementInfo[];
+        next_cursor?: string | null;
+      };
+      const all: MeasurementInfo[] = [];
+      let cursor: string | null = null;
+      // Hard-cap pages to avoid runaway loops if a buggy server keeps returning a cursor.
+      for (let i = 0; i < 50; i += 1) {
+        const qs: string = cursor
+          ? `?cursor=${encodeURIComponent(cursor)}`
+          : "";
+        const r: Page = await api.get<Page>(
+          `/api/v1/projects/${projectId}/measurements${qs}`
+        );
+        all.push(...r.measurements);
+        cursor = r.next_cursor ?? null;
+        if (!cursor) break;
+      }
+      setProjectMeasurements(all);
     } catch {
       setProjectMeasurements([]);
     }
@@ -405,19 +438,57 @@ export function PlanViewerWorkspace({
       return;
     }
     try {
-      const r = await api.get<{
+      type Page = {
         measurements: MeasurementInfo[];
         aggregates?: MeasurementAggregatesResponse | null;
-      }>(
-        `/api/v1/projects/${projectId}/measurements?sheet_id=${activeSheetId}&include_aggregates=true`
-      );
-      setSheetMeasurements(r.measurements);
-      setMeasurementAggregates(r.aggregates ?? null);
+        next_cursor?: string | null;
+      };
+      const all: MeasurementInfo[] = [];
+      let cursor: string | null = null;
+      let aggregates: MeasurementAggregatesResponse | null = null;
+      for (let i = 0; i < 50; i += 1) {
+        const params = new URLSearchParams({
+          sheet_id: activeSheetId,
+          // Aggregates only need to be requested once.
+          include_aggregates: i === 0 ? "true" : "false",
+        });
+        if (cursor) params.set("cursor", cursor);
+        const r: Page = await api.get<Page>(
+          `/api/v1/projects/${projectId}/measurements?${params.toString()}`
+        );
+        all.push(...r.measurements);
+        if (i === 0) aggregates = r.aggregates ?? null;
+        cursor = r.next_cursor ?? null;
+        if (!cursor) break;
+      }
+      setSheetMeasurements(all);
+      setMeasurementAggregates(aggregates);
     } catch {
       setSheetMeasurements([]);
       setMeasurementAggregates(null);
     }
   }, [projectId, activeSheetId, loadProjectMeasurements]);
+
+  const resyncMeasurementsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleMeasurementsResync = useCallback(() => {
+    if (resyncMeasurementsTimeoutRef.current != null) {
+      clearTimeout(resyncMeasurementsTimeoutRef.current);
+    }
+    resyncMeasurementsTimeoutRef.current = setTimeout(() => {
+      resyncMeasurementsTimeoutRef.current = null;
+      void loadSheetMeasurements();
+      void loadProjectMeasurements();
+    }, MEASUREMENTS_RESYNC_MS);
+  }, [loadSheetMeasurements, loadProjectMeasurements]);
+
+  useEffect(
+    () => () => {
+      if (resyncMeasurementsTimeoutRef.current != null) {
+        clearTimeout(resyncMeasurementsTimeoutRef.current);
+      }
+    },
+    []
+  );
 
   const broadcast = useBroadcastEvent();
   const { user } = useAuth();
@@ -426,14 +497,18 @@ export function PlanViewerWorkspace({
   const activeSheetIdRef = useRef(activeSheetId);
   activeSheetIdRef.current = activeSheetId;
 
-  const bumpMeasurementsRemote = useCallback(() => {
-    const sid = activeSheetIdRef.current;
-    if (!sid) return;
-    broadcast({
-      type: "contruo.measurements_changed",
-      sheetId: sid,
-    } as never);
-  }, [broadcast]);
+  const bumpMeasurementsRemote = useCallback(
+    (payload?: { measurementIds?: string[]; deletedIds?: string[] }) => {
+      const sid = activeSheetIdRef.current;
+      if (!sid) return;
+      broadcast({
+        type: "contruo.measurements_changed",
+        sheetId: sid,
+        ...payload,
+      } as never);
+    },
+    [broadcast]
+  );
 
   const bumpConditionsRemote = useCallback(() => {
     broadcast({ type: "contruo.conditions_changed" } as never);
@@ -448,16 +523,21 @@ export function PlanViewerWorkspace({
     loadConditionsRef.current = loadConditions;
   }, [loadSheetMeasurements, loadProjectMeasurements, loadConditions]);
 
+  const scheduleMeasurementsResyncRef = useRef(scheduleMeasurementsResync);
+  useEffect(() => {
+    scheduleMeasurementsResyncRef.current = scheduleMeasurementsResync;
+  }, [scheduleMeasurementsResync]);
+
   useEventListener(({ event }) => {
     if (!event || typeof event !== "object") return;
     const ev = event as CollaborationBroadcastEvent;
     if (ev.type === "contruo.measurements_changed") {
-      void loadSheetMeasurementsRef.current();
-      void loadProjectMeasurementsRef.current();
+      // Debounce so bursts of edits from collaborators collapse to one refetch.
+      scheduleMeasurementsResyncRef.current();
     }
     if (ev.type === "contruo.conditions_changed") {
       void loadConditionsRef.current();
-      void loadSheetMeasurementsRef.current();
+      scheduleMeasurementsResyncRef.current();
     }
   });
 
@@ -666,20 +746,26 @@ export function PlanViewerWorkspace({
         setLinearDraft([]);
         setLinearHoverPdf(null);
         setSheetMeasurements((prev) => [...prev, created]);
+        setProjectMeasurements((prev) => mergeMeasurementRow(prev, created));
         setActiveTool("select");
-        void loadSheetMeasurements();
         void loadConditions();
-        bumpMeasurementsRemote();
-      } catch {
-        //
+        void loadSheetMeasurements();
+        scheduleMeasurementsResync();
+        bumpMeasurementsRemote({ measurementIds: [created.id] });
+      } catch (e) {
+        if (e instanceof ApiError) {
+          toast.error(e.message);
+        } else {
+          toast.error("Failed to create linear measurement");
+        }
       }
     },
     [
       activeSheetId,
       activeConditionId,
       projectId,
-      loadSheetMeasurements,
       loadConditions,
+      scheduleMeasurementsResync,
       bumpMeasurementsRemote,
     ]
   );
@@ -720,12 +806,18 @@ export function PlanViewerWorkspace({
         setAreaRing([]);
         setAreaHoverPdf(null);
         setSheetMeasurements((prev) => [...prev, created]);
+        setProjectMeasurements((prev) => mergeMeasurementRow(prev, created));
         setActiveTool("select");
-        void loadSheetMeasurements();
         void loadConditions();
-        bumpMeasurementsRemote();
-      } catch {
-        //
+        void loadSheetMeasurements();
+        scheduleMeasurementsResync();
+        bumpMeasurementsRemote({ measurementIds: [created.id] });
+      } catch (e) {
+        if (e instanceof ApiError) {
+          toast.error(e.message);
+        } else {
+          toast.error("Failed to create area measurement");
+        }
       }
     })();
   }, [
@@ -733,8 +825,8 @@ export function PlanViewerWorkspace({
     activeSheetId,
     activeConditionId,
     projectId,
-    loadSheetMeasurements,
     loadConditions,
+    scheduleMeasurementsResync,
     bumpMeasurementsRemote,
   ]);
 
@@ -760,19 +852,26 @@ export function PlanViewerWorkspace({
         setMeasurementUndoStack((s) => [...s, created.id]);
         setMeasurementRedoStack([]);
         setSheetMeasurements((prev) => [...prev, created]);
-        void loadSheetMeasurements();
+        setProjectMeasurements((prev) => mergeMeasurementRow(prev, created));
         void loadConditions();
-        bumpMeasurementsRemote();
-      } catch {
+        void loadSheetMeasurements();
+        scheduleMeasurementsResync();
+        bumpMeasurementsRemote({ measurementIds: [created.id] });
+      } catch (e) {
         setCountPendingDots((p) => p.filter((d) => d.tempId !== tempId));
+        if (e instanceof ApiError) {
+          toast.error(e.message);
+        } else {
+          toast.error("Failed to create count measurement");
+        }
       }
     },
     [
       activeSheetId,
       activeConditionId,
       projectId,
-      loadSheetMeasurements,
       loadConditions,
+      scheduleMeasurementsResync,
       bumpMeasurementsRemote,
     ]
   );
@@ -826,6 +925,47 @@ export function PlanViewerWorkspace({
     [activeSheetId]
   );
 
+  /** Look up the cached version for a measurement so PATCH can attach If-Match. */
+  const versionForId = useCallback(
+    (id: string): number | undefined => {
+      const fromSheet = sheetMeasurements.find((m) => m.id === id)?.version;
+      if (typeof fromSheet === "number") return fromSheet;
+      return projectMeasurements.find((m) => m.id === id)?.version;
+    },
+    [sheetMeasurements, projectMeasurements]
+  );
+
+  /** Single PATCH path: attaches If-Match, surfaces 409 as a toast, and refetches. */
+  const patchMeasurementWithLock = useCallback(
+    async (id: string, body: Record<string, unknown>): Promise<MeasurementInfo | null> => {
+      const v = versionForId(id);
+      const headers: Record<string, string> = {};
+      if (typeof v === "number") headers["If-Match"] = String(v);
+      try {
+        const updated = await api.patch<MeasurementInfo>(
+          `/api/v1/measurements/${id}`,
+          body,
+          { headers }
+        );
+        return updated;
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409) {
+          toast.error("Measurement was changed by someone else", {
+            description: "Latest version loaded — review and try again.",
+          });
+          await loadSheetMeasurements();
+          void loadProjectMeasurements();
+          return null;
+        }
+        if (e instanceof ApiError) {
+          toast.error(e.message);
+        }
+        return null;
+      }
+    },
+    [versionForId, loadSheetMeasurements, loadProjectMeasurements]
+  );
+
   const onQuantitiesPatch = useCallback(
     async (
       id: string,
@@ -835,16 +975,14 @@ export function PlanViewerWorkspace({
         label?: string | null;
       }
     ) => {
-      try {
-        await api.patch(`/api/v1/measurements/${id}`, patch);
-        await loadSheetMeasurements();
-        void loadConditions();
-        bumpMeasurementsRemote();
-      } catch {
-        //
-      }
+      const updated = await patchMeasurementWithLock(id, patch);
+      if (!updated) return;
+      setSheetMeasurements((prev) => mergeMeasurementRow(prev, updated));
+      setProjectMeasurements((prev) => mergeMeasurementRow(prev, updated));
+      scheduleMeasurementsResync();
+      bumpMeasurementsRemote({ measurementIds: [id] });
     },
-    [loadSheetMeasurements, loadConditions, bumpMeasurementsRemote]
+    [patchMeasurementWithLock, scheduleMeasurementsResync, bumpMeasurementsRemote]
   );
 
   const onQuantitiesDelete = useCallback(
@@ -856,28 +994,30 @@ export function PlanViewerWorkspace({
           next.delete(id);
           return next;
         });
-        await loadSheetMeasurements();
+        const gone = new Set([id]);
+        setSheetMeasurements((prev) => removeMeasurementIds(prev, gone));
+        setProjectMeasurements((prev) => removeMeasurementIds(prev, gone));
         void loadConditions();
-        bumpMeasurementsRemote();
+        scheduleMeasurementsResync();
+        bumpMeasurementsRemote({ deletedIds: [id] });
       } catch {
         //
       }
     },
-    [loadSheetMeasurements, loadConditions, bumpMeasurementsRemote]
+    [loadConditions, scheduleMeasurementsResync, bumpMeasurementsRemote]
   );
 
   const onQuantitiesReassign = useCallback(
     async (id: string, conditionId: string) => {
-      try {
-        await api.patch(`/api/v1/measurements/${id}`, { condition_id: conditionId });
-        await loadSheetMeasurements();
-        void loadConditions();
-        bumpMeasurementsRemote();
-      } catch {
-        //
-      }
+      const updated = await patchMeasurementWithLock(id, { condition_id: conditionId });
+      if (!updated) return;
+      setSheetMeasurements((prev) => mergeMeasurementRow(prev, updated));
+      setProjectMeasurements((prev) => mergeMeasurementRow(prev, updated));
+      void loadConditions();
+      scheduleMeasurementsResync();
+      bumpMeasurementsRemote({ measurementIds: [id] });
     },
-    [loadSheetMeasurements, loadConditions, bumpMeasurementsRemote]
+    [patchMeasurementWithLock, loadConditions, scheduleMeasurementsResync, bumpMeasurementsRemote]
   );
 
   const handleSelectPdfPoint = useCallback(
@@ -970,26 +1110,14 @@ export function PlanViewerWorkspace({
         if (!final || final.id !== measurementId) return;
         const dist = Math.hypot(final.x - pos.x, final.y - pos.y);
         if (dist < 0.5) return;
-        try {
-          await api.patch(`/api/v1/measurements/${measurementId}`, {
-            geometry: { type: "count", position: { x: final.x, y: final.y } },
-          });
-          setSheetMeasurements((prev) =>
-            prev.map((m) =>
-              m.id === measurementId
-                ? {
-                    ...m,
-                    geometry: { type: "count" as const, position: { x: final.x, y: final.y } },
-                  }
-                : m
-            )
-          );
-          void loadSheetMeasurements();
-          void loadConditions();
-          bumpMeasurementsRemote();
-        } catch {
-          //
-        }
+        const updated = await patchMeasurementWithLock(measurementId, {
+          geometry: { type: "count", position: { x: final.x, y: final.y } },
+        });
+        if (!updated) return;
+        setSheetMeasurements((prev) => mergeMeasurementRow(prev, updated));
+        setProjectMeasurements((prev) => mergeMeasurementRow(prev, updated));
+        scheduleMeasurementsResync();
+        bumpMeasurementsRemote({ measurementIds: [measurementId] });
       };
       countDragPreviewRef.current = { id: measurementId, x: pos.x, y: pos.y };
       setCountDragPreview({ id: measurementId, x: pos.x, y: pos.y });
@@ -1001,8 +1129,8 @@ export function PlanViewerWorkspace({
       canEditMeasurements,
       activeTool,
       sheetMeasurements,
-      loadSheetMeasurements,
-      loadConditions,
+      patchMeasurementWithLock,
+      scheduleMeasurementsResync,
       remoteLocks,
       bumpMeasurementsRemote,
     ]
@@ -1029,24 +1157,22 @@ export function PlanViewerWorkspace({
         : [];
       const newVerts = verts.map((v) => ({ x: v.x, y: v.y }));
       const deductionsPayload = [...prior, { vertices: newVerts }];
-      try {
-        await api.patch(`/api/v1/measurements/${deductionEditMeasurementId}`, {
-          deductions: deductionsPayload,
-        });
-        setDeductionDraft([]);
-        setDeductionHoverPdf(null);
-        await loadSheetMeasurements();
-        void loadConditions();
-        bumpMeasurementsRemote();
-      } catch {
-        //
-      }
+      const updated = await patchMeasurementWithLock(deductionEditMeasurementId, {
+        deductions: deductionsPayload,
+      });
+      if (!updated) return;
+      setDeductionDraft([]);
+      setDeductionHoverPdf(null);
+      setSheetMeasurements((prev) => mergeMeasurementRow(prev, updated));
+      setProjectMeasurements((prev) => mergeMeasurementRow(prev, updated));
+      scheduleMeasurementsResync();
+      bumpMeasurementsRemote({ measurementIds: [deductionEditMeasurementId] });
     },
     [
       deductionEditMeasurementId,
       sheetMeasurements,
-      loadSheetMeasurements,
-      loadConditions,
+      patchMeasurementWithLock,
+      scheduleMeasurementsResync,
       bumpMeasurementsRemote,
     ]
   );
@@ -1163,18 +1289,21 @@ export function PlanViewerWorkspace({
     async (newConditionId: string) => {
       const only = selectedIds.size === 1 ? [...selectedIds][0] : null;
       if (!only || !newConditionId) return;
-      try {
-        await api.patch(`/api/v1/measurements/${only}`, {
-          condition_id: newConditionId,
-        });
-        await loadSheetMeasurements();
-        void loadConditions();
-        bumpMeasurementsRemote();
-      } catch {
-        //
-      }
+      const updated = await patchMeasurementWithLock(only, { condition_id: newConditionId });
+      if (!updated) return;
+      setSheetMeasurements((prev) => mergeMeasurementRow(prev, updated));
+      setProjectMeasurements((prev) => mergeMeasurementRow(prev, updated));
+      void loadConditions();
+      scheduleMeasurementsResync();
+      bumpMeasurementsRemote({ measurementIds: [only] });
     },
-    [selectedIds, loadSheetMeasurements, loadConditions, bumpMeasurementsRemote]
+    [
+      selectedIds,
+      patchMeasurementWithLock,
+      loadConditions,
+      scheduleMeasurementsResync,
+      bumpMeasurementsRemote,
+    ]
   );
 
   const linearOverlay = useMemo(() => {
@@ -1607,9 +1736,11 @@ export function PlanViewerWorkspace({
             );
             setMeasurementRedoStack((s) => s.slice(0, -1));
             setMeasurementUndoStack((s) => [...s, created.id]);
-            await loadSheetMeasurements();
+            setSheetMeasurements((prev) => mergeMeasurementRow(prev, created));
+            setProjectMeasurements((prev) => mergeMeasurementRow(prev, created));
             void loadConditions();
-            bumpMeasurementsRemote();
+            scheduleMeasurementsResync();
+            bumpMeasurementsRemote({ measurementIds: [created.id] });
           } catch {
             //
           }
@@ -1688,9 +1819,12 @@ export function PlanViewerWorkspace({
             );
             setSelectedIds(new Set());
             setMeasurementUndoStack((s) => s.filter((x) => !idsToDelete.includes(x)));
-            await loadSheetMeasurements();
+            const gone = new Set(idsToDelete);
+            setSheetMeasurements((prev) => removeMeasurementIds(prev, gone));
+            setProjectMeasurements((prev) => removeMeasurementIds(prev, gone));
             void loadConditions();
-            bumpMeasurementsRemote();
+            scheduleMeasurementsResync();
+            bumpMeasurementsRemote({ deletedIds: idsToDelete });
           } catch {
             //
           }
@@ -1751,9 +1885,12 @@ export function PlanViewerWorkspace({
               }
               await api.delete(`/api/v1/measurements/${id}`);
               setMeasurementUndoStack((s) => s.slice(0, -1));
-              await loadSheetMeasurements();
+              const gone = new Set([id]);
+              setSheetMeasurements((prev) => removeMeasurementIds(prev, gone));
+              setProjectMeasurements((prev) => removeMeasurementIds(prev, gone));
               void loadConditions();
-              bumpMeasurementsRemote();
+              scheduleMeasurementsResync();
+              bumpMeasurementsRemote({ deletedIds: [id] });
             } catch {
               if (existing) {
                 setMeasurementRedoStack((s) => s.slice(0, -1));
@@ -1824,7 +1961,7 @@ export function PlanViewerWorkspace({
       finishLinearMeasurement,
       submitAreaPolygonStep,
       measurementUndoStack,
-      loadSheetMeasurements,
+      scheduleMeasurementsResync,
       loadConditions,
       selectedIds,
       bumpMeasurementsRemote,
@@ -2229,8 +2366,10 @@ export function PlanViewerWorkspace({
             compatibleConditionsForReassign.length > 0 ? (
             <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border bg-surface px-3 py-1.5 text-[11px]">
               <span className="text-muted-foreground">Change condition</span>
-              <select
-                className="max-w-[200px] rounded-md border border-border bg-background px-2 py-0.5 text-[11px]"
+              <NativeSelect
+                size="sm"
+                aria-label="Reassign measurement condition"
+                className="max-w-[200px]"
                 value={selectedMeasurement.condition_id}
                 onChange={(e) => void onReassignMeasurementCondition(e.target.value)}
               >
@@ -2239,7 +2378,7 @@ export function PlanViewerWorkspace({
                     {c.name}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
           ) : null}
 

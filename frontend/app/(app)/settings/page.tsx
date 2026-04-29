@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { api } from "@/lib/api";
 import type { OrgInfo } from "@/types/org";
 import { Upload, Loader2 } from "lucide-react";
@@ -14,7 +17,6 @@ export default function SettingsPage() {
   const [units, setUnits] = useState<"imperial" | "metric">("imperial");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<OrgInfo>("/api/v1/org").then((data) => {
@@ -26,16 +28,15 @@ export default function SettingsPage() {
 
   async function handleSave() {
     setSaving(true);
-    setMessage(null);
     try {
       const updated = await api.patch<OrgInfo>("/api/v1/org", {
         name,
         default_units: units,
       });
       setOrg(updated);
-      setMessage("Settings saved");
+      toast.success("Settings saved");
     } catch {
-      setMessage("Failed to save settings");
+      toast.error("Failed to save settings");
     } finally {
       setSaving(false);
     }
@@ -45,7 +46,6 @@ export default function SettingsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    setMessage(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -62,12 +62,12 @@ export default function SettingsPage() {
       if (res.ok) {
         const updated: OrgInfo = await res.json();
         setOrg(updated);
-        setMessage("Logo uploaded");
+        toast.success("Logo uploaded");
       } else {
-        setMessage("Failed to upload logo");
+        toast.error("Failed to upload logo");
       }
     } catch {
-      setMessage("Failed to upload logo");
+      toast.error("Failed to upload logo");
     } finally {
       setUploading(false);
     }
@@ -88,7 +88,7 @@ export default function SettingsPage() {
       <div className="space-y-6">
         {/* Logo */}
         <div className="space-y-2">
-          <label className="text-sm font-medium">Logo</label>
+          <span className="block text-sm font-medium">Logo</span>
           <div className="flex items-center gap-4">
             {org.logo_url ? (
               <Image
@@ -103,10 +103,13 @@ export default function SettingsPage() {
                 <Upload className="h-5 w-5" />
               </div>
             )}
-            <label className="cursor-pointer">
-              <span className="inline-flex h-8 items-center rounded-md border border-border bg-surface px-3 text-sm font-medium hover:bg-surface-overlay">
-                {uploading ? "Uploading..." : "Upload Logo"}
-              </span>
+            <Button
+              variant="outline"
+              disabled={uploading}
+              nativeButton={false}
+              render={<label className="cursor-pointer" />}
+            >
+              {uploading ? "Uploading..." : "Upload Logo"}
               <input
                 type="file"
                 accept=".png,.jpg,.jpeg,.svg,.webp"
@@ -114,7 +117,7 @@ export default function SettingsPage() {
                 onChange={handleLogoUpload}
                 disabled={uploading}
               />
-            </label>
+            </Button>
           </div>
           <p className="text-xs text-muted-foreground">
             PNG, JPG, SVG, or WebP. Max 2MB.
@@ -123,9 +126,7 @@ export default function SettingsPage() {
 
         {/* Name */}
         <div className="space-y-2">
-          <label htmlFor="org-name" className="text-sm font-medium">
-            Organization Name
-          </label>
+          <Label htmlFor="org-name">Organization Name</Label>
           <Input
             id="org-name"
             value={name}
@@ -135,36 +136,22 @@ export default function SettingsPage() {
 
         {/* Unit System */}
         <div className="space-y-2">
-          <label className="text-sm font-medium">Default Unit System</label>
-          <div className="flex gap-4 text-sm">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="units"
-                value="imperial"
-                checked={units === "imperial"}
-                onChange={() => setUnits("imperial")}
-                className="accent-primary"
-              />
+          <span className="block text-sm font-medium">Default Unit System</span>
+          <RadioGroup
+            value={units}
+            onValueChange={(v) => setUnits(v as "imperial" | "metric")}
+            className="flex flex-row gap-4 text-sm"
+          >
+            <Label htmlFor="units-imperial" className="cursor-pointer">
+              <RadioGroupItem id="units-imperial" value="imperial" />
               Imperial (ft, in, SF, LF)
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="units"
-                value="metric"
-                checked={units === "metric"}
-                onChange={() => setUnits("metric")}
-                className="accent-primary"
-              />
+            </Label>
+            <Label htmlFor="units-metric" className="cursor-pointer">
+              <RadioGroupItem id="units-metric" value="metric" />
               Metric (m, cm, m², m)
-            </label>
-          </div>
+            </Label>
+          </RadioGroup>
         </div>
-
-        {message && (
-          <p className="text-sm text-muted-foreground">{message}</p>
-        )}
 
         <Button onClick={handleSave} disabled={saving}>
           {saving ? "Saving..." : "Save Changes"}

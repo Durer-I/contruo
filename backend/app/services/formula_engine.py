@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import math
 import operator
+from functools import lru_cache
 from typing import Any, Callable
 
 
@@ -50,6 +51,18 @@ def _preprocess(source: str) -> str:
     if not s:
         raise FormulaError("EMPTY", "Formula is empty")
     return s.replace("^", "**")
+
+
+@lru_cache(maxsize=512)
+def _compile_formula(source: str) -> ast.Expression:
+    """Parse + cache the AST so derived-quantity loops over many measurements
+    don't reparse the same formula string per row.
+    """
+    src = _preprocess(source)
+    try:
+        return ast.parse(src, mode="eval")
+    except SyntaxError as e:
+        raise FormulaError("SYNTAX_ERROR", e.msg or "Invalid syntax") from e
 
 
 class _SafeEval(ast.NodeVisitor):
@@ -119,11 +132,7 @@ class _SafeEval(ast.NodeVisitor):
 
 def evaluate_formula(expression: str, variables: dict[str, float]) -> float:
     """Evaluate ``expression`` using ``variables`` (all values must be numeric)."""
-    src = _preprocess(expression)
-    try:
-        tree = ast.parse(src, mode="eval")
-    except SyntaxError as e:
-        raise FormulaError("SYNTAX_ERROR", e.msg or "Invalid syntax") from e
+    tree = _compile_formula(expression)
     ev = _SafeEval(variables)
     result = ev.visit(tree)
     if not isinstance(result, (int, float)) or isinstance(result, bool):

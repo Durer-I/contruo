@@ -38,6 +38,28 @@ async def _project_card_counts(
     return sc, mc
 
 
+def _project_to_response(
+    project,
+    *,
+    sheet_count: int,
+    member_count: int,
+) -> ProjectResponse:
+    """Single conversion path for the project card payload."""
+    return ProjectResponse(
+        id=project.id,
+        org_id=project.org_id,
+        name=project.name,
+        description=project.description,
+        status=project.status,
+        created_by=project.created_by,
+        created_at=project.created_at,
+        updated_at=project.updated_at,
+        cover_image_url=project_service.project_cover_signed_url(project.cover_image_path),
+        sheet_count=sheet_count,
+        member_count=member_count,
+    )
+
+
 # ── Projects ─────────────────────────────────────────────────────────
 
 @router.get("", response_model=ProjectListResponse)
@@ -45,7 +67,9 @@ async def list_projects(
     auth: AuthContext = Depends(require_permission(Permission.VIEW_PLANS)),
     db: AsyncSession = Depends(get_db),
 ):
-    projects = await project_service.list_projects(db, auth.org_id)
+    projects = await project_service.list_projects(
+        db, auth.org_id, user_id=auth.user_id
+    )
     return {"projects": projects}
 
 
@@ -85,6 +109,7 @@ async def search_project_plans(
     db: AsyncSession = Depends(get_db),
 ):
     """Search extracted text across all sheets in the project."""
+    await project_service.assert_project_visible(db, auth, project_id)
     rows = await sheet_service.search_project_sheets(
         db, auth.org_id, project_id, query=q
     )
@@ -110,21 +135,9 @@ async def get_project(
     auth: AuthContext = Depends(require_permission(Permission.VIEW_PLANS)),
     db: AsyncSession = Depends(get_db),
 ):
-    project = await project_service.get_project(db, auth.org_id, project_id)
+    project = await project_service.get_project(db, auth.org_id, project_id, auth=auth)
     sheet_count, member_count = await _project_card_counts(db, auth.org_id, project_id)
-    return ProjectResponse(
-        id=project.id,
-        org_id=project.org_id,
-        name=project.name,
-        description=project.description,
-        status=project.status,
-        created_by=project.created_by,
-        created_at=project.created_at,
-        updated_at=project.updated_at,
-        cover_image_url=project_service.project_cover_signed_url(project.cover_image_path),
-        sheet_count=sheet_count,
-        member_count=member_count,
-    )
+    return _project_to_response(project, sheet_count=sheet_count, member_count=member_count)
 
 
 @router.patch("/{project_id}", response_model=ProjectResponse)
@@ -134,6 +147,7 @@ async def update_project(
     auth: AuthContext = Depends(require_permission(Permission.CREATE_PROJECTS)),
     db: AsyncSession = Depends(get_db),
 ):
+    await project_service.assert_project_visible(db, auth, project_id)
     _fields_set = getattr(body, "model_fields_set", None) or set()
     project = await project_service.update_project(
         db,
@@ -146,19 +160,7 @@ async def update_project(
         status=body.status,
     )
     sheet_count, member_count = await _project_card_counts(db, auth.org_id, project_id)
-    return ProjectResponse(
-        id=project.id,
-        org_id=project.org_id,
-        name=project.name,
-        description=project.description,
-        status=project.status,
-        created_by=project.created_by,
-        created_at=project.created_at,
-        updated_at=project.updated_at,
-        cover_image_url=project_service.project_cover_signed_url(project.cover_image_path),
-        sheet_count=sheet_count,
-        member_count=member_count,
-    )
+    return _project_to_response(project, sheet_count=sheet_count, member_count=member_count)
 
 
 @router.post("/{project_id}/cover", response_model=ProjectResponse)
@@ -169,6 +171,7 @@ async def upload_project_cover(
     db: AsyncSession = Depends(get_db),
 ):
     """Upload or replace the project card cover image (JPEG, PNG, or WebP)."""
+    await project_service.assert_project_visible(db, auth, project_id)
     content = await file.read()
     project = await project_service.upload_project_cover(
         db,
@@ -179,19 +182,7 @@ async def upload_project_cover(
         content_type=file.content_type,
     )
     sheet_count, member_count = await _project_card_counts(db, auth.org_id, project_id)
-    return ProjectResponse(
-        id=project.id,
-        org_id=project.org_id,
-        name=project.name,
-        description=project.description,
-        status=project.status,
-        created_by=project.created_by,
-        created_at=project.created_at,
-        updated_at=project.updated_at,
-        cover_image_url=project_service.project_cover_signed_url(project.cover_image_path),
-        sheet_count=sheet_count,
-        member_count=member_count,
-    )
+    return _project_to_response(project, sheet_count=sheet_count, member_count=member_count)
 
 
 @router.delete("/{project_id}", status_code=204)
@@ -201,6 +192,7 @@ async def delete_project(
     db: AsyncSession = Depends(get_db),
 ):
     """Permanently delete the project, all plans/sheets, guest access, and Supabase files."""
+    await project_service.assert_project_visible(db, auth, project_id)
     await project_service.delete_project(db, auth.org_id, project_id, auth.user_id)
     return Response(status_code=204)
 
@@ -214,6 +206,7 @@ async def upload_plan(
     auth: AuthContext = Depends(require_permission(Permission.UPLOAD_PLANS)),
     db: AsyncSession = Depends(get_db),
 ):
+    await project_service.assert_project_visible(db, auth, project_id)
     content = await file.read()
     plan = await plan_service.create_plan(
         db,
@@ -224,20 +217,7 @@ async def upload_plan(
         content=content,
         content_type=file.content_type,
     )
-    return PlanResponse(
-        id=plan.id,
-        project_id=plan.project_id,
-        filename=plan.filename,
-        file_size=plan.file_size,
-        page_count=plan.page_count,
-        status=plan.status,
-        processed_pages=plan.processed_pages,
-        processing_substep=plan.processing_substep,
-        error_message=plan.error_message,
-        uploaded_by=plan.uploaded_by,
-        created_at=plan.created_at,
-        updated_at=plan.updated_at,
-    )
+    return PlanResponse.from_model(plan)
 
 
 @router.get("/{project_id}/plans", response_model=PlanListResponse)
@@ -246,26 +226,9 @@ async def list_project_plans(
     auth: AuthContext = Depends(require_permission(Permission.VIEW_PLANS)),
     db: AsyncSession = Depends(get_db),
 ):
+    await project_service.assert_project_visible(db, auth, project_id)
     plans = await plan_service.list_project_plans(db, auth.org_id, project_id)
-    return {
-        "plans": [
-            PlanResponse(
-                id=p.id,
-                project_id=p.project_id,
-                filename=p.filename,
-                file_size=p.file_size,
-                page_count=p.page_count,
-                status=p.status,
-                processed_pages=p.processed_pages,
-                processing_substep=p.processing_substep,
-                error_message=p.error_message,
-                uploaded_by=p.uploaded_by,
-                created_at=p.created_at,
-                updated_at=p.updated_at,
-            )
-            for p in plans
-        ]
-    }
+    return {"plans": [PlanResponse.from_model(p) for p in plans]}
 
 
 @router.get("/{project_id}/sheets", response_model=SheetListResponse)
@@ -274,29 +237,9 @@ async def list_project_sheets(
     auth: AuthContext = Depends(require_permission(Permission.VIEW_PLANS)),
     db: AsyncSession = Depends(get_db),
 ):
+    await project_service.assert_project_visible(db, auth, project_id)
     sheets = await plan_service.list_project_sheets(db, auth.org_id, project_id)
-
-    return {
-        "sheets": [
-            SheetListItemResponse(
-                id=s.id,
-                plan_id=s.plan_id,
-                project_id=s.project_id,
-                page_number=s.page_number,
-                sheet_name=s.sheet_name,
-                scale_value=s.scale_value,
-                scale_unit=s.scale_unit,
-                scale_label=s.scale_label,
-                scale_source=s.scale_source,
-                width_px=s.width_px,
-                height_px=s.height_px,
-                thumbnail_url=None,
-                created_at=s.created_at,
-                vector_snap_segment_count=s.vector_snap_segment_count,
-            )
-            for s in sheets
-        ]
-    }
+    return {"sheets": [SheetListItemResponse.from_model(s) for s in sheets]}
 
 
 @router.post(
@@ -310,6 +253,7 @@ async def post_sheet_thumbnail_urls(
     db: AsyncSession = Depends(get_db),
 ):
     """Signed thumbnail URLs for up to 100 sheets (batch; parallel signing on server)."""
+    await project_service.assert_project_visible(db, auth, project_id)
     urls = await plan_service.resolve_thumbnail_urls_for_sheets(
         db, auth.org_id, project_id, body.sheet_ids
     )
@@ -327,6 +271,7 @@ async def import_condition_from_template(
     auth: AuthContext = Depends(require_permission(Permission.IMPORT_TEMPLATES)),
     db: AsyncSession = Depends(get_db),
 ):
+    await project_service.assert_project_visible(db, auth, project_id)
     return await template_service.import_template_to_project(
         db, auth.org_id, project_id, auth.user_id, body.template_id
     )

@@ -1,0 +1,46 @@
+You are given content extracted from engineering drawings.
+
+Your task is to identify and extract "schedule tables" from the content.
+
+A schedule table may appear in two ways:
+1. A clearly defined table → extract it directly.
+2. A descriptive section (e.g., symbols, abbreviations, legends) → construct a table from the information.
+
+---
+
+### OUTPUT FORMAT (STRICT JSON ONLY)
+
+Return a JSON array. Each item must follow this structure:
+
+{
+  "title": "<title of the schedule or section>",
+  "num_columns": <number of columns>,
+  "data": {
+    "<column_name_1>": [list of values],
+    "<column_name_2>": [list of values]
+  }
+}
+
+---
+
+### RULES
+
+- Always return valid JSON. No explanations, no extra text.
+- Each table must have consistent column lengths.
+- Infer column names if not explicitly provided.
+- If constructing a table from descriptive text:
+  - Create meaningful column headers (e.g., "Symbol", "Meaning").
+- Ignore irrelevant text that is not part of a schedule or legend.
+- If no schedule-like data is found, return an empty array: []
+- Preserve original wording exactly when possible.
+- Do not hallucinate missing values.
+- If a table is incomplete, extract only what is clearly present.
+- Extract only the schedule data and ignore everything else.
+
+---
+
+### INPUT
+
+Here is the extracted content:
+
+{input_data}

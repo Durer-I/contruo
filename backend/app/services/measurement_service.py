@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import base64
 import math
 import uuid
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.middleware.error_handler import AppException, NotFoundException
+from app.middleware.error_handler import (
+    AppException,
+    ConflictException,
+    NotFoundException,
+)
 from app.models.assembly_item import AssemblyItem
 from app.models.condition import Condition
 from app.models.measurement import Measurement
@@ -369,6 +375,7 @@ def _to_response(
         override_value=m.override_value,
         label=m.label,
         created_by=m.created_by,
+        version=getattr(m, "version", 1) or 1,
         created_at=m.created_at,
         updated_at=m.updated_at,
         derived_quantities=derived if derived is not None else [],
@@ -526,6 +533,29 @@ async def _aggregates_for_project(
     return MeasurementAggregates(sheet_by_condition=sheet_rows, project_by_condition=project_rows)
 
 
+#: Defensive default + cap for cursor pagination on the measurement list.
+DEFAULT_MEASUREMENT_PAGE_SIZE = 500
+MAX_MEASUREMENT_PAGE_SIZE = 2000
+
+
+def _encode_cursor(created_at: datetime, mid: uuid.UUID) -> str:
+    raw = f"{created_at.isoformat()}|{mid}"
+    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
+
+
+def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
+        ts_s, id_s = raw.split("|", 1)
+        return datetime.fromisoformat(ts_s), uuid.UUID(id_s)
+    except (ValueError, TypeError) as e:
+        raise AppException(
+            code="INVALID_CURSOR",
+            message="Pagination cursor is malformed",
+            status_code=400,
+        ) from e
+
+
 async def list_project_measurements(
     db: AsyncSession,
     org_id: uuid.UUID,
@@ -533,22 +563,55 @@ async def list_project_measurements(
     *,
     sheet_id: uuid.UUID | None = None,
     include_aggregates: bool = False,
+    limit: int = DEFAULT_MEASUREMENT_PAGE_SIZE,
+    cursor: str | None = None,
 ) -> MeasurementListResponse:
+    """List a page of measurements for a project, ordered by ``created_at, id``.
+
+    Uses keyset pagination on ``(created_at, id)`` so the page size is constant
+    regardless of how deep the client scrolls. Returns ``next_cursor`` when there
+    are more rows.
+    """
     await project_service.get_project(db, org_id, project_id)
+
+    page_size = max(1, min(int(limit or DEFAULT_MEASUREMENT_PAGE_SIZE), MAX_MEASUREMENT_PAGE_SIZE))
+
     stmt = select(Measurement).where(
         Measurement.org_id == org_id, Measurement.project_id == project_id
     )
     if sheet_id is not None:
         stmt = stmt.where(Measurement.sheet_id == sheet_id)
-    stmt = stmt.order_by(Measurement.created_at.asc())
+
+    if cursor:
+        ts, last_id = _decode_cursor(cursor)
+        # Tuple comparison so equal timestamps still page deterministically by id.
+        stmt = stmt.where(
+            or_(
+                Measurement.created_at > ts,
+                and_(Measurement.created_at == ts, Measurement.id > last_id),
+            )
+        )
+
+    stmt = stmt.order_by(Measurement.created_at.asc(), Measurement.id.asc()).limit(
+        page_size + 1
+    )
     rows = list((await db.execute(stmt)).scalars().all())
+
+    next_cursor: str | None = None
+    if len(rows) > page_size:
+        last = rows[page_size - 1]
+        next_cursor = _encode_cursor(last.created_at, last.id)
+        rows = rows[:page_size]
+
     measurements = await _responses_with_derived(db, org_id, rows)
 
     aggregates: MeasurementAggregates | None = None
     if include_aggregates:
         aggregates = await _aggregates_for_project(db, org_id, project_id, sheet_id=sheet_id)
 
-    return MeasurementListResponse(measurements=measurements, aggregates=aggregates)
+    return MeasurementListResponse(
+        measurements=measurements, aggregates=aggregates, next_cursor=next_cursor
+    )
 
 
 async def create_measurement(
@@ -658,8 +721,22 @@ async def update_measurement(
     measurement_id: uuid.UUID,
     user_id: uuid.UUID,
     body: UpdateMeasurementRequest,
+    *,
+    expected_version: int | None = None,
 ) -> MeasurementResponse:
     m = await _get_measurement(db, org_id, measurement_id)
+    # Optimistic locking via ``If-Match`` (forwarded from the route as
+    # ``expected_version``). Skipped when the client doesn't send it so older
+    # clients keep working, but the canvas now sends it on every PATCH.
+    if expected_version is not None and getattr(m, "version", 1) != expected_version:
+        raise ConflictException(
+            "This measurement was changed by another user. Refresh to see the latest.",
+            code="VERSION_MISMATCH",
+            details={
+                "current_version": getattr(m, "version", 1),
+                "expected_version": expected_version,
+            },
+        )
 
     stmt_sh = select(Sheet).where(Sheet.id == m.sheet_id, Sheet.org_id == org_id)
     sheet = (await db.execute(stmt_sh)).scalar_one_or_none()
@@ -747,6 +824,7 @@ async def update_measurement(
     if "override_value" in data:
         m.override_value = data["override_value"]
 
+    m.version = (getattr(m, "version", 1) or 1) + 1
     await db.flush()
     await db.refresh(m)
 

@@ -12,11 +12,15 @@ import { Loader2, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { toast } from "@/components/ui/sonner";
+import { Textarea } from "@/components/ui/textarea";
 import { api, ApiError } from "@/lib/api";
 import {
   defaultUnitForMeasurementType,
+  formatMeasurementTypeLabel,
   unitsForMeasurementType,
 } from "@/lib/condition-units";
 import { TAKEOFF_CONDITION_COLORS } from "@/lib/takeoff-condition-colors";
@@ -260,8 +264,10 @@ export const ConditionManagerPanel = forwardRef<
         "/api/v1/org/condition-templates"
       );
       setTemplates(r.templates);
-    } catch {
+    } catch (e) {
       setTemplates([]);
+      const msg = e instanceof ApiError ? e.message : "Could not load templates";
+      toast.error(msg);
     } finally {
       setTemplatesLoading(false);
     }
@@ -346,9 +352,6 @@ export const ConditionManagerPanel = forwardRef<
     }
   }, [active, canManage, conditions, onActiveConditionChange, onConditionsChange, onCollaborationMutation]);
 
-  const typeLabel = (t: MeasurementType) =>
-    t === "linear" ? "Linear" : t === "area" ? "Area" : "Count";
-
   const unitOptions = useMemo(() => {
     const allowed = [...unitsForMeasurementType(form.measurement_type)];
     const u = form.unit.trim();
@@ -400,7 +403,7 @@ export const ConditionManagerPanel = forwardRef<
                   />
                   <span className="min-w-0 flex-1 truncate font-medium">{c.name}</span>
                   <span className="shrink-0 text-[10px] text-muted-foreground">
-                    {typeLabel(c.measurement_type)}
+                    {formatMeasurementTypeLabel(c.measurement_type)}
                   </span>
                   <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                     {c.total_quantity === 0
@@ -467,8 +470,7 @@ export const ConditionManagerPanel = forwardRef<
             <div className="grid grid-cols-2 gap-2">
               <label className="space-y-1">
                 <span className="text-[10px] uppercase text-muted-foreground">Type</span>
-                <select
-                  className="flex h-8 w-full rounded-md border border-border bg-background px-2 text-xs"
+                <NativeSelect
                   disabled={!canManage}
                   value={form.measurement_type}
                   onChange={(e) => {
@@ -485,12 +487,11 @@ export const ConditionManagerPanel = forwardRef<
                   <option value="linear">Linear</option>
                   <option value="area">Area</option>
                   <option value="count">Count</option>
-                </select>
+                </NativeSelect>
               </label>
               <label className="space-y-1">
                 <span className="text-[10px] uppercase text-muted-foreground">Unit</span>
-                <select
-                  className="flex h-8 w-full rounded-md border border-border bg-background px-2 text-xs"
+                <NativeSelect
                   disabled={!canManage}
                   value={form.unit}
                   onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
@@ -500,7 +501,7 @@ export const ConditionManagerPanel = forwardRef<
                       {u}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </label>
             </div>
 
@@ -532,8 +533,7 @@ export const ConditionManagerPanel = forwardRef<
                 <div className="grid grid-cols-2 gap-2">
                   <label className="space-y-1">
                     <span className="text-[10px] uppercase text-muted-foreground">Line style</span>
-                    <select
-                      className="flex h-8 w-full rounded-md border border-border bg-background px-2 text-xs"
+                    <NativeSelect
                       disabled={!canManage}
                       value={form.line_style}
                       onChange={(e) =>
@@ -546,14 +546,13 @@ export const ConditionManagerPanel = forwardRef<
                       <option value="solid">Solid</option>
                       <option value="dashed">Dashed</option>
                       <option value="dotted">Dotted</option>
-                    </select>
+                    </NativeSelect>
                   </label>
                   <label className="space-y-1">
                     <span className="text-[10px] uppercase text-muted-foreground">
                       Fill pattern
                     </span>
-                    <select
-                      className="flex h-8 w-full rounded-md border border-border bg-background px-2 text-xs"
+                    <NativeSelect
                       disabled={!canManage}
                       value={form.fill_pattern}
                       onChange={(e) =>
@@ -566,14 +565,13 @@ export const ConditionManagerPanel = forwardRef<
                       <option value="solid">Solid</option>
                       <option value="hatch">Hatch</option>
                       <option value="crosshatch">Crosshatch</option>
-                    </select>
+                    </NativeSelect>
                   </label>
                 </div>
               ) : (
                 <label className="space-y-1">
                   <span className="text-[10px] uppercase text-muted-foreground">Line style</span>
-                  <select
-                    className="flex h-8 w-full rounded-md border border-border bg-background px-2 text-xs"
+                  <NativeSelect
                     disabled={!canManage}
                     value={form.line_style}
                     onChange={(e) =>
@@ -586,7 +584,7 @@ export const ConditionManagerPanel = forwardRef<
                     <option value="solid">Solid</option>
                     <option value="dashed">Dashed</option>
                     <option value="dotted">Dotted</option>
-                  </select>
+                  </NativeSelect>
                 </label>
               )
             ) : null}
@@ -721,8 +719,8 @@ export const ConditionManagerPanel = forwardRef<
             </label>
             <label className="space-y-1">
               <span className="text-[10px] uppercase text-muted-foreground">Description</span>
-              <textarea
-                className="min-h-[52px] w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+              <Textarea
+                className="min-h-[52px] text-xs"
                 value={form.description}
                 disabled={!canManage}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
@@ -730,8 +728,8 @@ export const ConditionManagerPanel = forwardRef<
             </label>
             <label className="space-y-1">
               <span className="text-[10px] uppercase text-muted-foreground">Notes</span>
-              <textarea
-                className="min-h-[52px] w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+              <Textarea
+                className="min-h-[52px] text-xs"
                 value={form.notes}
                 disabled={!canManage}
                 onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}

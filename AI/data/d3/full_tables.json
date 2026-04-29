@@ -1,0 +1,83 @@
+[
+    {
+        "title": "INTERIOR FINISH SCHEDULE, LEGENDS AND DETAILS",
+        "page": 31,
+        "tables": [
+            {
+                "file_id": "file-7BN5Yrm2cASHiWtqPNrNWF",
+                "bbox": {
+                    "x0": 89.52,
+                    "top": 71.92000000000007,
+                    "x1": 2682.43625,
+                    "bottom": 2087.88
+                }
+            },
+            {
+                "file_id": "file-VVjGfvRDMCZdu6r58rsABp",
+                "bbox": {
+                    "x0": 2718.3599999999997,
+                    "top": 989.8800000000001,
+                    "x1": 2988.3599999999997,
+                    "bottom": 1035.3085714285714
+                }
+            }
+        ]
+    },
+    {
+        "title": "TOILET ACCESSORY SCHEDULE & MOUNTING HEIGHTS",
+        "page": 57,
+        "tables": [
+            {
+                "file_id": "file-9jxfumHnsUnEXVXzXm2gXp",
+                "bbox": {
+                    "x0": 89.52,
+                    "top": 71.88000000000011,
+                    "x1": 2681.6652631578945,
+                    "bottom": 2087.88
+                }
+            },
+            {
+                "file_id": "file-619LBzHF6aoVqbx5aPUY5Z",
+                "bbox": {
+                    "x0": 1440.5123076923078,
+                    "top": 1362.84,
+                    "x1": 2681.6652631578945,
+                    "bottom": 1636.56
+                }
+            }
+        ]
+    },
+    {
+        "title": "DOOR SCHEDULE, DOOR AND FRAME TYPES",
+        "page": 64,
+        "tables": [
+            {
+                "file_id": "file-3HQYGRCNLWm2LNeGC1Jzn2",
+                "bbox": {
+                    "x0": 89.52,
+                    "top": 71.88000000000011,
+                    "x1": 2682.08,
+                    "bottom": 2087.88
+                }
+            },
+            {
+                "file_id": "file-7RuAQqJpLYFCfBQm2pc2zJ",
+                "bbox": {
+                    "x0": 113.39999999999999,
+                    "top": 119.40000000000009,
+                    "x1": 1185.7257142857143,
+                    "bottom": 1404.6
+                }
+            },
+            {
+                "file_id": "file-HK1Ro6fK2Gs8isSEa4BDS7",
+                "bbox": {
+                    "x0": 2718.3599999999997,
+                    "top": 989.8800000000001,
+                    "x1": 2988.3599999999997,
+                    "bottom": 1033.08
+                }
+            }
+        ]
+    }
+]

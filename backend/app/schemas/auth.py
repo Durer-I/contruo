@@ -11,7 +11,8 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    # Cap login password length to bound request size and align with Supabase max.
+    password: str = Field(..., min_length=1, max_length=128)
 
 
 class ResetPasswordRequest(BaseModel):

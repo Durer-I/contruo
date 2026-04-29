@@ -19,4 +19,15 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    # Auto-retry transient failures on every task with a sane backoff.
+    # Per-task ``retry_backoff`` / ``retry_kwargs`` may override these defaults.
+    task_annotations={
+        "*": {
+            "autoretry_for": (IOError, ConnectionError, TimeoutError),
+            "retry_backoff": True,
+            "retry_backoff_max": 300,
+            "retry_jitter": True,
+            "max_retries": 3,
+        }
+    },
 )

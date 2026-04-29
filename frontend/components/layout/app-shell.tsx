@@ -11,9 +11,10 @@ import { useAuth } from "@/providers/auth-provider";
 import { cn } from "@/lib/utils";
 
 function DesktopViewportWarning() {
+  // Design system minimum is 1280×720; warn anything below that.
   const [narrow, setNarrow] = useState(false);
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 1023px)");
+    const mq = window.matchMedia("(max-width: 1279px)");
     const apply = () => setNarrow(mq.matches);
     apply();
     mq.addEventListener("change", apply);
@@ -26,7 +27,7 @@ function DesktopViewportWarning() {
       role="status"
     >
       Contruo is built for desktop estimating. For the intended layout, use a window at least{" "}
-      <strong>1024px</strong> wide (larger is better).
+      <strong>1280px</strong> wide (larger is better).
     </div>
   );
 }

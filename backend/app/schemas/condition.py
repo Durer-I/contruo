@@ -33,8 +33,8 @@ class ConditionBase(BaseModel):
     fill_pattern: FillPattern = "solid"
     properties: ConditionPropertiesPayload = Field(default_factory=ConditionPropertiesPayload)
     trade: str | None = Field(default=None, max_length=100)
-    description: str | None = None
-    notes: str | None = None
+    description: str | None = Field(default=None, max_length=10_000)
+    notes: str | None = Field(default=None, max_length=10_000)
 
 
 class CreateConditionRequest(ConditionBase):
@@ -52,8 +52,8 @@ class UpdateConditionRequest(BaseModel):
     fill_pattern: FillPattern | None = None
     properties: ConditionPropertiesPayload | None = None
     trade: str | None = Field(default=None, max_length=100)
-    description: str | None = None
-    notes: str | None = None
+    description: str | None = Field(default=None, max_length=10_000)
+    notes: str | None = Field(default=None, max_length=10_000)
     sort_order: int | None = Field(default=None, ge=0)
 
 

@@ -1,8 +1,12 @@
-import { createClient } from "@/lib/supabase";
+import { api } from "@/lib/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-/** Liveblocks `authEndpoint` callback: POST token with Supabase JWT. */
+/**
+ * Liveblocks `authEndpoint` callback: POST the room name to our backend, which
+ * verifies project membership and returns a Liveblocks token.
+ *
+ * Routed through the shared ``api`` client so we get JWT attachment, ApiError
+ * handling, and request-id propagation for free.
+ */
 export function createLiveblocksAuthEndpoint(): (
   room?: string
 ) => Promise<{ token: string }> {
@@ -10,30 +14,10 @@ export function createLiveblocksAuthEndpoint(): (
     if (!room) {
       throw new Error("Missing collaboration room");
     }
-    const supabase = createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    if (!token) {
-      throw new Error("Not signed in");
-    }
-    const res = await fetch(`${API_URL}/api/v1/liveblocks/auth`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ room }),
+    const body = await api.post<{ token?: string }>("/api/v1/liveblocks/auth", {
+      room,
     });
-    const body = (await res.json().catch(() => ({}))) as {
-      token?: string;
-      error?: { message?: string };
-    };
-    if (!res.ok) {
-      throw new Error(body?.error?.message ?? res.statusText);
-    }
-    if (!body.token) {
+    if (!body?.token) {
       throw new Error("Liveblocks auth response missing token");
     }
     return { token: body.token };

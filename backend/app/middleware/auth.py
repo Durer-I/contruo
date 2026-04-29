@@ -4,6 +4,8 @@ Validates the JWT from the Authorization header using Supabase's JWKS,
 then looks up the user's org_id and role from the database.
 """
 
+import asyncio
+import time
 import uuid
 import logging
 from dataclasses import dataclass
@@ -21,7 +23,13 @@ from app.middleware.error_handler import UnauthorizedException, ForbiddenExcepti
 
 logger = logging.getLogger(__name__)
 
+#: How long to trust a fetched JWKS before re-fetching. Protects against stale keys
+#: after Supabase rotation; short enough that recovery is automatic without a restart.
+_JWKS_TTL_SECONDS = 30 * 60
+
 _jwks_cache: dict | None = None
+_jwks_fetched_at: float = 0.0
+_jwks_lock = asyncio.Lock()
 
 
 @dataclass
@@ -32,27 +40,49 @@ class AuthContext:
     email: str
 
 
-async def _get_jwks() -> dict:
-    """Fetch and cache Supabase JWKS for JWT verification."""
-    global _jwks_cache
-    if _jwks_cache is not None:
-        return _jwks_cache
-
+async def _fetch_jwks() -> dict:
     settings = get_settings()
     if not settings.supabase_url:
         raise UnauthorizedException("Auth service not configured")
-
     jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
-
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(jwks_url)
             response.raise_for_status()
-            _jwks_cache = response.json()
-            return _jwks_cache
+            return response.json()
     except Exception as e:
         logger.error("Failed to fetch JWKS: %s", e)
         raise UnauthorizedException("Auth service unavailable")
+
+
+async def _get_jwks(*, force: bool = False) -> dict:
+    """TTL-bounded JWKS cache with single-flight refresh.
+
+    ``force=True`` is used by ``_decode_jwt`` when the token's ``kid`` is not in
+    the cached set — common after Supabase rotates keys. The lock prevents a
+    thundering herd on restart.
+    """
+    global _jwks_cache, _jwks_fetched_at
+    now = time.monotonic()
+    if (
+        not force
+        and _jwks_cache is not None
+        and (now - _jwks_fetched_at) < _JWKS_TTL_SECONDS
+    ):
+        return _jwks_cache
+
+    async with _jwks_lock:
+        # Recheck under the lock to avoid duplicate fetches.
+        now = time.monotonic()
+        if (
+            not force
+            and _jwks_cache is not None
+            and (now - _jwks_fetched_at) < _JWKS_TTL_SECONDS
+        ):
+            return _jwks_cache
+        _jwks_cache = await _fetch_jwks()
+        _jwks_fetched_at = time.monotonic()
+        return _jwks_cache
 
 
 def _decode_jwt(token: str, jwks: dict) -> dict:
@@ -120,8 +150,15 @@ async def get_current_user(
 
     token = auth_header[7:]  # Strip "Bearer "
 
-    # Validate JWT
+    # Validate JWT — on a kid miss, refresh JWKS once before failing.
     jwks = await _get_jwks()
+    try:
+        kid_in_token = jwt.get_unverified_header(token).get("kid")
+    except JWTError:
+        kid_in_token = None
+    known_kids = {k.get("kid") for k in jwks.get("keys", [])}
+    if kid_in_token and kid_in_token not in known_kids:
+        jwks = await _get_jwks(force=True)
     payload = _decode_jwt(token, jwks)
 
     supabase_user_id = payload.get("sub")

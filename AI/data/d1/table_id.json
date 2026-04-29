@@ -1,0 +1,1694 @@
+[
+    {
+        "title": "DOOR AND FRAME SCHEDULE & ELEVATIONS",
+        "page": 38,
+        "tables": [
+            {
+                "file_id": "file-2x1YycbyBJ1wGYmob5xc7N",
+                "bbox": {
+                    "x0": 104.15999999999993,
+                    "top": 35.940000000000055,
+                    "x1": 2732.16,
+                    "bottom": 2123.94
+                }
+            },
+            {
+                "file_id": "file-LXg8ASy4aSvhSmmQjs7KDy",
+                "bbox": {
+                    "x0": 1132.6115625000002,
+                    "top": 126.42000000000007,
+                    "x1": 2307.7799999999997,
+                    "bottom": 976.9200000000001
+                }
+            },
+            {
+                "file_id": "file-SLmmtx2Uq5rJKbkvgnR4M4",
+                "bbox": {
+                    "x0": 2488.469032258064,
+                    "top": 126.42000000000007,
+                    "x1": 2717.770909090909,
+                    "bottom": 148.79999999999995
+                }
+            },
+            {
+                "file_id": "file-7mce1nREfSYn9rYmqc2mJo",
+                "bbox": {
+                    "x0": 2488.469032258064,
+                    "top": 159.83999999999992,
+                    "x1": 2704.4464249999996,
+                    "bottom": 181.98000000000002
+                }
+            },
+            {
+                "file_id": "file-51vwFHA3rG2LhsLANvDPdG",
+                "bbox": {
+                    "x0": 341.16,
+                    "top": 191.4933333333334,
+                    "x1": 455.8575,
+                    "bottom": 226.16999999999996
+                }
+            },
+            {
+                "file_id": "file-MgsgGUwUFyHBFFWT3Zcr8x",
+                "bbox": {
+                    "x0": 2488.469032258064,
+                    "top": 191.4933333333334,
+                    "x1": 2717.770909090909,
+                    "bottom": 226.16999999999996
+                }
+            },
+            {
+                "file_id": "file-Yb17vYeW2fbYugocvn4W6k",
+                "bbox": {
+                    "x0": 341.16,
+                    "top": 242.12142857142862,
+                    "x1": 467.91,
+                    "bottom": 249.12
+                }
+            },
+            {
+                "file_id": "file-STqMvfgWD8PrKFFbeBhUKj",
+                "bbox": {
+                    "x0": 2488.469032258064,
+                    "top": 242.12142857142862,
+                    "x1": 2704.4464249999996,
+                    "bottom": 256.22823529411767
+                }
+            },
+            {
+                "file_id": "file-GHbCdwF94ozBBq93JxH9GG",
+                "bbox": {
+                    "x0": 341.16,
+                    "top": 270.168,
+                    "x1": 474.51,
+                    "bottom": 294.6642857142857
+                }
+            },
+            {
+                "file_id": "file-CCPujFZx8yY5ZTmbfGLwhh",
+                "bbox": {
+                    "x0": 589.14,
+                    "top": 312.03833333333336,
+                    "x1": 742.4762903225807,
+                    "bottom": 372.4468965517242
+                }
+            },
+            {
+                "file_id": "file-GuVPxqsycFDUTSzLxXjeKS",
+                "bbox": {
+                    "x0": 839.3045454545455,
+                    "top": 360.89428571428573,
+                    "x1": 927.64,
+                    "bottom": 385.00600000000003
+                }
+            },
+            {
+                "file_id": "file-LZzQTu41ywdWjH8VTbYtzA",
+                "bbox": {
+                    "x0": 249.77217391304347,
+                    "top": 372.4468965517242,
+                    "x1": 314.38,
+                    "bottom": 392.54400000000004
+                }
+            },
+            {
+                "file_id": "file-9vKPtqcEKmh6vMZS8fstEP",
+                "bbox": {
+                    "x0": 2471.739074418605,
+                    "top": 392.54400000000004,
+                    "x1": 2717.770909090909,
+                    "bottom": 426.2011764705882
+                }
+            },
+            {
+                "file_id": "file-UBCwQFGpZsjFauo9X2ofxi",
+                "bbox": {
+                    "x0": 839.3045454545455,
+                    "top": 430.73999999999995,
+                    "x1": 962.52,
+                    "bottom": 439.3909090909092
+                }
+            },
+            {
+                "file_id": "file-D4NbNsJSQut57HbdYjufiE",
+                "bbox": {
+                    "x0": 2471.739074418605,
+                    "top": 439.3909090909092,
+                    "x1": 2717.770909090909,
+                    "bottom": 458.52
+                }
+            },
+            {
+                "file_id": "file-6zw6CNNASzCd12w26S3TMB",
+                "bbox": {
+                    "x0": 2471.739074418605,
+                    "top": 469.55999999999995,
+                    "x1": 2704.4464249999996,
+                    "bottom": 505.1480000000001
+                }
+            },
+            {
+                "file_id": "file-3YkD2wzv2Fd5w857miL5ew",
+                "bbox": {
+                    "x0": 2471.739074418605,
+                    "top": 513.8400000000001,
+                    "x1": 2717.770909090909,
+                    "bottom": 557.778
+                }
+            },
+            {
+                "file_id": "file-BEZ1agYyWtye6tBW25pZQK",
+                "bbox": {
+                    "x0": 168.34000000000003,
+                    "top": 524.8650000000001,
+                    "x1": 314.38,
+                    "bottom": 551.8800000000001
+                }
+            },
+            {
+                "file_id": "file-SExC6WRFRvcH5p66akbrmP",
+                "bbox": {
+                    "x0": 2471.739074418605,
+                    "top": 570.5775,
+                    "x1": 2717.770909090909,
+                    "bottom": 597.8526315789474
+                }
+            },
+            {
+                "file_id": "file-B1JXQXe462Lk5ML4WCc4Nm",
+                "bbox": {
+                    "x0": 2798.4,
+                    "top": 584.426153846154,
+                    "x1": 2814.96,
+                    "bottom": 611.2816216216215
+                }
+            },
+            {
+                "file_id": "file-X3EDFFTmJLynZjghHfk7Va",
+                "bbox": {
+                    "x0": 2823.84,
+                    "top": 584.426153846154,
+                    "x1": 2829.3,
+                    "bottom": 611.2816216216215
+                }
+            },
+            {
+                "file_id": "file-1z4zHQGxDU8pTYXAcPNC4v",
+                "bbox": {
+                    "x0": 2860.8,
+                    "top": 584.426153846154,
+                    "x1": 2897.88,
+                    "bottom": 611.2816216216215
+                }
+            },
+            {
+                "file_id": "file-NmJGnfHsbLnPTRAEd2siF7",
+                "bbox": {
+                    "x0": 2471.739074418605,
+                    "top": 611.2816216216215,
+                    "x1": 2717.770909090909,
+                    "bottom": 649.1919999999999
+                }
+            },
+            {
+                "file_id": "file-7iKqxx9U5RccBDAsW1wrVb",
+                "bbox": {
+                    "x0": 2471.739074418605,
+                    "top": 657.6599999999999,
+                    "x1": 2690.56,
+                    "bottom": 681.576
+                }
+            },
+            {
+                "file_id": "file-1defmpMd4pvBTVcZy5R6ws",
+                "bbox": {
+                    "x0": 168.34000000000003,
+                    "top": 681.576,
+                    "x1": 272.56125,
+                    "bottom": 871.9610526315788
+                }
+            },
+            {
+                "file_id": "file-SQYftAxKDbUzaqNj1Eme9w",
+                "bbox": {
+                    "x0": 2471.739074418605,
+                    "top": 688.95,
+                    "x1": 2717.770909090909,
+                    "bottom": 724.47
+                }
+            },
+            {
+                "file_id": "file-3g9qNJSbAsVEA4ybRPypSf",
+                "bbox": {
+                    "x0": 562.86,
+                    "top": 806.7233333333332,
+                    "x1": 742.4762903225807,
+                    "bottom": 916.89
+                }
+            },
+            {
+                "file_id": "file-RwjsxooTmZNuJDkZ2fQXpw",
+                "bbox": {
+                    "x0": 249.77217391304347,
+                    "top": 911.2875000000001,
+                    "x1": 314.38,
+                    "bottom": 932.6399999999999
+                }
+            },
+            {
+                "file_id": "file-NfL5RAG7jugh93yp5bfuwN",
+                "bbox": {
+                    "x0": 606.3789473684211,
+                    "top": 945.02,
+                    "x1": 670.47,
+                    "bottom": 963.4831578947369
+                }
+            },
+            {
+                "file_id": "file-9EhcqB48jUpaD7dSN2cUNv",
+                "bbox": {
+                    "x0": 168.34000000000003,
+                    "top": 1045.92,
+                    "x1": 314.38,
+                    "bottom": 1073.8799999999999
+                }
+            },
+            {
+                "file_id": "file-Xs6xt5sA2uqBLEng1Ncbmd",
+                "bbox": {
+                    "x0": 378.51,
+                    "top": 1094.53,
+                    "x1": 718.14,
+                    "bottom": 1122.5466666666666
+                }
+            },
+            {
+                "file_id": "file-FrCC6trfuLjMRpUUBDEyvj",
+                "bbox": {
+                    "x0": 2452.6632,
+                    "top": 1146.795,
+                    "x1": 2717.770909090909,
+                    "bottom": 1212.2640000000001
+                }
+            },
+            {
+                "file_id": "file-QL7hLmTaWL7o51h6Et3X2q",
+                "bbox": {
+                    "x0": 2452.6632,
+                    "top": 1233.36,
+                    "x1": 2471.739074418605,
+                    "bottom": 1244.5079999999998
+                }
+            },
+            {
+                "file_id": "file-UA2X1kFLM5WbWZu2pTYRT7",
+                "bbox": {
+                    "x0": 2488.469032258064,
+                    "top": 1233.36,
+                    "x1": 2717.770909090909,
+                    "bottom": 1266.318
+                }
+            },
+            {
+                "file_id": "file-NVA4AdYsE7f6fKpgp11Lmw",
+                "bbox": {
+                    "x0": 1436.9444117647058,
+                    "top": 1293.084,
+                    "x1": 1535.26875,
+                    "bottom": 1482.66
+                }
+            },
+            {
+                "file_id": "file-7N7mJLxnKTxFxJCShn2fqK",
+                "bbox": {
+                    "x0": 1683.6375,
+                    "top": 1293.084,
+                    "x1": 1781.835,
+                    "bottom": 1482.66
+                }
+            },
+            {
+                "file_id": "file-K1rZgdH2j7jS28HVDcu7Cx",
+                "bbox": {
+                    "x0": 2062.8814285714284,
+                    "top": 1312.3086206896553,
+                    "x1": 2136.2325,
+                    "bottom": 1433.4364285714287
+                }
+            },
+            {
+                "file_id": "file-RHoch7GoW9bdSaauNx3XnW",
+                "bbox": {
+                    "x0": 2215.293333333333,
+                    "top": 1312.3086206896553,
+                    "x1": 2292.75,
+                    "bottom": 1433.4364285714287
+                }
+            },
+            {
+                "file_id": "file-GMQqpfosv8gpNTXECWBHt4",
+                "bbox": {
+                    "x0": 2505.66,
+                    "top": 1331.2926315789475,
+                    "x1": 2611.23,
+                    "bottom": 1355.282857142857
+                }
+            },
+            {
+                "file_id": "file-ALGBKEEMyTd6e3nkbp9ryL",
+                "bbox": {
+                    "x0": 2452.6632,
+                    "top": 1366.08,
+                    "x1": 2471.739074418605,
+                    "bottom": 1377.8828571428571
+                }
+            },
+            {
+                "file_id": "file-Rm8vpS2jNG9sSuqvz7p2cV",
+                "bbox": {
+                    "x0": 2488.469032258064,
+                    "top": 1366.08,
+                    "x1": 2704.4464249999996,
+                    "bottom": 1377.8828571428571
+                }
+            },
+            {
+                "file_id": "file-74TfinpUupRJNnAMcSRcUz",
+                "bbox": {
+                    "x0": 857.1,
+                    "top": 1377.8828571428571,
+                    "x1": 903.5446153846153,
+                    "bottom": 1399.5771428571427
+                }
+            },
+            {
+                "file_id": "file-QSkDZs13NWBRahaANQeCUL",
+                "bbox": {
+                    "x0": 2505.66,
+                    "top": 1399.5771428571427,
+                    "x1": 2611.23,
+                    "bottom": 1422.39
+                }
+            },
+            {
+                "file_id": "file-Bzn5QGe6DPfqRHMpbyxktQ",
+                "bbox": {
+                    "x0": 2452.6632,
+                    "top": 1433.4364285714287,
+                    "x1": 2471.739074418605,
+                    "bottom": 1443.5766666666666
+                }
+            },
+            {
+                "file_id": "file-VkmmnatE4QpUUcVrB7W99d",
+                "bbox": {
+                    "x0": 2488.469032258064,
+                    "top": 1433.4364285714287,
+                    "x1": 2629.407227272727,
+                    "bottom": 1466.8342857142857
+                }
+            },
+            {
+                "file_id": "file-Hq5sETRBq21SM9E8Gvtx5p",
+                "bbox": {
+                    "x0": 1452.69,
+                    "top": 1454.96,
+                    "x1": 1473.1999666666668,
+                    "bottom": 1466.8342857142857
+                }
+            },
+            {
+                "file_id": "file-Nn1F4hDNf5bxaARennd5y5",
+                "bbox": {
+                    "x0": 1701.48,
+                    "top": 1454.96,
+                    "x1": 1721.1839800000002,
+                    "bottom": 1466.8342857142857
+                }
+            },
+            {
+                "file_id": "file-XwkSFbfdKhpxPtauDyKc4R",
+                "bbox": {
+                    "x0": 1750.05,
+                    "top": 1454.96,
+                    "x1": 1771.7399500000001,
+                    "bottom": 1466.8342857142857
+                }
+            },
+            {
+                "file_id": "file-QHocVPz5jgYUCoZnuAWxso",
+                "bbox": {
+                    "x0": 2505.66,
+                    "top": 1466.8342857142857,
+                    "x1": 2662.56,
+                    "bottom": 1499.0563636363636
+                }
+            },
+            {
+                "file_id": "file-Tg9c2CFtFaZfKjNJvJKxNd",
+                "bbox": {
+                    "x0": 2452.6632,
+                    "top": 1509.9000000000003,
+                    "x1": 2471.739074418605,
+                    "bottom": 1520.8472727272726
+                }
+            },
+            {
+                "file_id": "file-PRsXDYt2SsfFu228wU4zm8",
+                "bbox": {
+                    "x0": 2488.469032258064,
+                    "top": 1509.9000000000003,
+                    "x1": 2704.4464249999996,
+                    "bottom": 1532.04
+                }
+            },
+            {
+                "file_id": "file-E2kqfcPoZggrrAXdu4vcjA",
+                "bbox": {
+                    "x0": 1250.1375,
+                    "top": 1524.96,
+                    "x1": 1305.24,
+                    "bottom": 1536.0
+                }
+            },
+            {
+                "file_id": "file-ML7BrvNGrtk1MuET69rCsP",
+                "bbox": {
+                    "x0": 1701.48,
+                    "top": 1524.96,
+                    "x1": 1757.04,
+                    "bottom": 1536.0
+                }
+            },
+            {
+                "file_id": "file-W4ZXhQfUHNU5Jcs6DsuJcu",
+                "bbox": {
+                    "x0": 2452.6632,
+                    "top": 1543.08,
+                    "x1": 2471.739074418605,
+                    "bottom": 1554.1799999999998
+                }
+            },
+            {
+                "file_id": "file-TJEXAYjLn4VHJAvug9WDxJ",
+                "bbox": {
+                    "x0": 2488.469032258064,
+                    "top": 1543.08,
+                    "x1": 2680.574975,
+                    "bottom": 1576.32
+                }
+            },
+            {
+                "file_id": "file-TEuN37WfWsEetV7acakyyG",
+                "bbox": {
+                    "x0": 2452.6632,
+                    "top": 1587.36,
+                    "x1": 2471.739074418605,
+                    "bottom": 1598.3999999999999
+                }
+            },
+            {
+                "file_id": "file-MAwgiAagchsjz3MeuH6Dx2",
+                "bbox": {
+                    "x0": 2488.469032258064,
+                    "top": 1587.36,
+                    "x1": 2662.56,
+                    "bottom": 1621.2599999999998
+                }
+            },
+            {
+                "file_id": "file-7khQNuYm2NeeGGNFsEYJsJ",
+                "bbox": {
+                    "x0": 1535.26875,
+                    "top": 1616.6100000000001,
+                    "x1": 1650.06,
+                    "bottom": 1674.09
+                }
+            },
+            {
+                "file_id": "file-D9jS7Qw1k33mSGJ8Dkjyp4",
+                "bbox": {
+                    "x0": 1108.336,
+                    "top": 1638.54,
+                    "x1": 1229.91,
+                    "bottom": 1661.2457142857145
+                }
+            },
+            {
+                "file_id": "file-CgYH7tAgDMQ3J4pWt4UPpW",
+                "bbox": {
+                    "x0": 2242.68,
+                    "top": 1708.8,
+                    "x1": 2408.3742857142856,
+                    "bottom": 1752.87
+                }
+            },
+            {
+                "file_id": "file-3Eami4U3Zi9r2rWChLVb79",
+                "bbox": {
+                    "x0": 1108.336,
+                    "top": 1735.0015384615385,
+                    "x1": 1229.91,
+                    "bottom": 1759.1680000000001
+                }
+            },
+            {
+                "file_id": "file-WzBSC6CGPbLJnKgpd4u3ew",
+                "bbox": {
+                    "x0": 2242.68,
+                    "top": 1788.7285714285715,
+                    "x1": 2408.3742857142856,
+                    "bottom": 1855.8
+                }
+            },
+            {
+                "file_id": "file-JPmuembisA4muPTMQenVN8",
+                "bbox": {
+                    "x0": 1883.76,
+                    "top": 1797.39,
+                    "x1": 1933.98,
+                    "bottom": 1820.2
+                }
+            },
+            {
+                "file_id": "file-7L646ms3gaM4ssFS6naXb2",
+                "bbox": {
+                    "x0": 2242.68,
+                    "top": 1868.1599999999999,
+                    "x1": 2418.8999999999996,
+                    "bottom": 1890.18
+                }
+            },
+            {
+                "file_id": "file-8Tzvrx9wpRXca9ApjAdKng",
+                "bbox": {
+                    "x0": 762.78,
+                    "top": 1882.325,
+                    "x1": 978.6139999999999,
+                    "bottom": 1941.295
+                }
+            },
+            {
+                "file_id": "file-NqKWEh4WaSZwishoeUW84Z",
+                "bbox": {
+                    "x0": 1108.336,
+                    "top": 1971.5714285714287,
+                    "x1": 1216.74,
+                    "bottom": 2000.136
+                }
+            },
+            {
+                "file_id": "file-Pr5DsHCK9kQCTbejGHt6Gw",
+                "bbox": {
+                    "x0": 1683.6375,
+                    "top": 2000.136,
+                    "x1": 1803.96,
+                    "bottom": 2016.9675
+                }
+            }
+        ]
+    },
+    {
+        "title": "MODULAR CASEWORK SCHEDULE AND DETAILS",
+        "page": 42,
+        "tables": [
+            {
+                "file_id": "file-JkQKHxwcaempDN9meFaZDC",
+                "bbox": {
+                    "x0": 104.15999999999987,
+                    "top": 35.940000000000055,
+                    "x1": 2732.16,
+                    "bottom": 2123.94
+                }
+            },
+            {
+                "file_id": "file-GpYjbKwuPQmass7S2JXnRA",
+                "bbox": {
+                    "x0": 2473.44,
+                    "top": 100.5,
+                    "x1": 2704.8,
+                    "bottom": 146.89499999999992
+                }
+            },
+            {
+                "file_id": "file-PYNeQapDpecgDdDii7UwZT",
+                "bbox": {
+                    "x0": 1902.2266666666667,
+                    "top": 104.57999999999993,
+                    "x1": 2390.134285714286,
+                    "bottom": 126.72000000000003
+                }
+            },
+            {
+                "file_id": "file-PngCduYJTDTkgfe8J5PGS7",
+                "bbox": {
+                    "x0": 2473.44,
+                    "top": 157.41500749999992,
+                    "x1": 2715.3,
+                    "bottom": 175.2457142857143
+                }
+            },
+            {
+                "file_id": "file-LNUm4FoE7UDJbQK67DpocN",
+                "bbox": {
+                    "x0": 2050.6028571428574,
+                    "top": 165.66000000000003,
+                    "x1": 2125.0061538461537,
+                    "bottom": 207.89500000000007
+                }
+            },
+            {
+                "file_id": "file-QctrGyAkjvAYJhro3NgFUM",
+                "bbox": {
+                    "x0": 2223.48,
+                    "top": 175.2457142857143,
+                    "x1": 2231.8312750000005,
+                    "bottom": 197.40857142857135
+                }
+            },
+            {
+                "file_id": "file-VYE47FEgPSQ48GNsGQonSm",
+                "bbox": {
+                    "x0": 213.6553846153846,
+                    "top": 186.22071428571425,
+                    "x1": 337.3591304347826,
+                    "bottom": 296.24
+                }
+            },
+            {
+                "file_id": "file-KiiLUneAoBoJ2vsM3XyZz6",
+                "bbox": {
+                    "x0": 2241.7533333333336,
+                    "top": 186.22071428571425,
+                    "x1": 2263.695,
+                    "bottom": 207.89500000000007
+                }
+            },
+            {
+                "file_id": "file-PXVWD574UaonVzGaiJFit4",
+                "bbox": {
+                    "x0": 2263.695,
+                    "top": 258.72428571428566,
+                    "x1": 2390.134285714286,
+                    "bottom": 270.8250000000001
+                }
+            },
+            {
+                "file_id": "file-1rWSG3mzFoywwhhk1JWeeV",
+                "bbox": {
+                    "x0": 2176.055332777778,
+                    "top": 270.8250000000001,
+                    "x1": 2369.055,
+                    "bottom": 375.8657142857143
+                }
+            },
+            {
+                "file_id": "file-Vt3QH8JkMADN2c4FRLZ5Px",
+                "bbox": {
+                    "x0": 426.43125,
+                    "top": 289.16999999999996,
+                    "x1": 565.68,
+                    "bottom": 308.75538461538457
+                }
+            },
+            {
+                "file_id": "file-JbGQD6hvM9372u8bYq5LR9",
+                "bbox": {
+                    "x0": 1956.162222222222,
+                    "top": 308.75538461538457,
+                    "x1": 2061.7725,
+                    "bottom": 497.27294117647057
+                }
+            },
+            {
+                "file_id": "file-7i9gjghUUMV8voD4Yh2tVE",
+                "bbox": {
+                    "x0": 2147.376737755102,
+                    "top": 411.0,
+                    "x1": 2369.055,
+                    "bottom": 497.27294117647057
+                }
+            },
+            {
+                "file_id": "file-BsU4RhfSLG4jbX5Ukewg5f",
+                "bbox": {
+                    "x0": 426.43125,
+                    "top": 415.905,
+                    "x1": 565.68,
+                    "bottom": 436.98
+                }
+            },
+            {
+                "file_id": "file-BM1R4nHRwiWZVm9f4FMR34",
+                "bbox": {
+                    "x0": 1977.6750000000004,
+                    "top": 524.7085714285713,
+                    "x1": 2046.72,
+                    "bottom": 536.6914285714284
+                }
+            },
+            {
+                "file_id": "file-WrWX775VPaw1GoBWWwuMZS",
+                "bbox": {
+                    "x0": 2070.2,
+                    "top": 524.7085714285713,
+                    "x1": 2090.580025,
+                    "bottom": 536.6914285714284
+                }
+            },
+            {
+                "file_id": "file-J6cewvJ3hxRdzBpTntiBJi",
+                "bbox": {
+                    "x0": 2176.055332777778,
+                    "top": 524.7085714285713,
+                    "x1": 2241.7533333333336,
+                    "bottom": 536.6914285714284
+                }
+            },
+            {
+                "file_id": "file-5AhG4dWvr4aKQkzC9bZgUS",
+                "bbox": {
+                    "x0": 2263.695,
+                    "top": 524.7085714285713,
+                    "x1": 2402.19,
+                    "bottom": 536.6914285714284
+                }
+            },
+            {
+                "file_id": "file-YVJuWL6FWgWBSuSN1PswMj",
+                "bbox": {
+                    "x0": 725.88,
+                    "top": 576.6600000000002,
+                    "x1": 915.0087804878049,
+                    "bottom": 984.2225806451613
+                }
+            },
+            {
+                "file_id": "file-PzoXNgmeYRBGLk8JAgx61R",
+                "bbox": {
+                    "x0": 1370.7516652777779,
+                    "top": 687.1885714285714,
+                    "x1": 1605.96,
+                    "bottom": 712.6168421052632
+                }
+            },
+            {
+                "file_id": "file-Kiim6CB9vojMMN6YDcBH6m",
+                "bbox": {
+                    "x0": 1956.162222222222,
+                    "top": 687.1885714285714,
+                    "x1": 2176.055332777778,
+                    "bottom": 984.2225806451613
+                }
+            },
+            {
+                "file_id": "file-EQDR9i1b8tFzRJW5g6ZcqL",
+                "bbox": {
+                    "x0": 164.775,
+                    "top": 712.6168421052632,
+                    "x1": 320.79,
+                    "bottom": 731.3672727272728
+                }
+            },
+            {
+                "file_id": "file-1CbwUVGza925cNGa9BVWu2",
+                "bbox": {
+                    "x0": 1004.79375,
+                    "top": 731.3672727272728,
+                    "x1": 1099.3799999999999,
+                    "bottom": 757.9314285714287
+                }
+            },
+            {
+                "file_id": "file-2JcCbZ74rC6gKyAxrPbg41",
+                "bbox": {
+                    "x0": 2285.76,
+                    "top": 757.9314285714287,
+                    "x1": 2390.134285714286,
+                    "bottom": 780.4650000000001
+                }
+            },
+            {
+                "file_id": "file-JqVbm2oDnh5p4MCQvyNvMM",
+                "bbox": {
+                    "x0": 1004.79375,
+                    "top": 780.4650000000001,
+                    "x1": 1128.48,
+                    "bottom": 807.24
+                }
+            },
+            {
+                "file_id": "file-JgWopqrwakhreGDSdX5asr",
+                "bbox": {
+                    "x0": 1700.9154545454546,
+                    "top": 807.24,
+                    "x1": 1803.59,
+                    "bottom": 834.3240000000002
+                }
+            },
+            {
+                "file_id": "file-Dp7vQgR7mxL6VfPL7ZiSNV",
+                "bbox": {
+                    "x0": 1004.79375,
+                    "top": 858.18,
+                    "x1": 1108.428,
+                    "bottom": 879.4333333333333
+                }
+            },
+            {
+                "file_id": "file-L8uZfEPiZrDR6H59acGTUF",
+                "bbox": {
+                    "x0": 139.17692307692306,
+                    "top": 908.3325000000002,
+                    "x1": 450.66,
+                    "bottom": 2006.11125
+                }
+            },
+            {
+                "file_id": "file-Lm8SBX2bqfRSwVs8cbrcPE",
+                "bbox": {
+                    "x0": 524.46,
+                    "top": 970.6799999999998,
+                    "x1": 662.82,
+                    "bottom": 992.76
+                }
+            },
+            {
+                "file_id": "file-CXetWchCKpJPLMB5Jr5yYt",
+                "bbox": {
+                    "x0": 1004.79375,
+                    "top": 992.76,
+                    "x1": 1161.14,
+                    "bottom": 1014.3
+                }
+            },
+            {
+                "file_id": "file-LwtA7wYzu3QfXXrmz6dBEn",
+                "bbox": {
+                    "x0": 509.52,
+                    "top": 1072.6199999999997,
+                    "x1": 632.1771428571428,
+                    "bottom": 1115.64
+                }
+            },
+            {
+                "file_id": "file-TnM7QsAu81Htzq8zZjFg5i",
+                "bbox": {
+                    "x0": 509.52,
+                    "top": 1142.59,
+                    "x1": 612.2285714285714,
+                    "bottom": 1162.1159999999998
+                }
+            },
+            {
+                "file_id": "file-GBernL7TzuPLHmJJ2HC1Q9",
+                "bbox": {
+                    "x0": 2285.76,
+                    "top": 1162.1159999999998,
+                    "x1": 2421.89,
+                    "bottom": 1187.1733333333334
+                }
+            },
+            {
+                "file_id": "file-JzswSBzs6cDvYmgVdtQCZU",
+                "bbox": {
+                    "x0": 1370.7516652777779,
+                    "top": 1287.815172413793,
+                    "x1": 1384.7368421052631,
+                    "bottom": 1505.335
+                }
+            },
+            {
+                "file_id": "file-KaBp9yzA6wDXg28J4WHkXH",
+                "bbox": {
+                    "x0": 1528.92,
+                    "top": 1287.815172413793,
+                    "x1": 1635.96,
+                    "bottom": 1505.335
+                }
+            },
+            {
+                "file_id": "file-UpDhrCwqvyCFEQLyHHCqqr",
+                "bbox": {
+                    "x0": 1700.9154545454546,
+                    "top": 1327.9320000000002,
+                    "x1": 1803.59,
+                    "bottom": 1351.02
+                }
+            },
+            {
+                "file_id": "file-Bjq76jTdYcLyAjCCiSQcyS",
+                "bbox": {
+                    "x0": 2285.76,
+                    "top": 1351.02,
+                    "x1": 2410.6200000000003,
+                    "bottom": 1372.68
+                }
+            },
+            {
+                "file_id": "file-S1vdWrr2XiHt9HUgABG5XW",
+                "bbox": {
+                    "x0": 1700.9154545454546,
+                    "top": 1361.1545454545455,
+                    "x1": 1835.565,
+                    "bottom": 1382.7335999999998
+                }
+            },
+            {
+                "file_id": "file-HLQPHj2UKuW4Ek3gwJXHgG",
+                "bbox": {
+                    "x0": 716.3072727272727,
+                    "top": 1382.7335999999998,
+                    "x1": 1021.161818181818,
+                    "bottom": 2027.8524
+                }
+            },
+            {
+                "file_id": "file-XjCro6oC3rHqMGBF59otqV",
+                "bbox": {
+                    "x0": 1117.8,
+                    "top": 1382.7335999999998,
+                    "x1": 1243.4799999999998,
+                    "bottom": 1400.989090909091
+                }
+            },
+            {
+                "file_id": "file-HxKffUH8xVu8XHkL3Gg3M6",
+                "bbox": {
+                    "x0": 1956.162222222222,
+                    "top": 1466.0966666666668,
+                    "x1": 2176.055332777778,
+                    "bottom": 1505.335
+                }
+            },
+            {
+                "file_id": "file-P1TKjZgz4Aq7XRbTeGrA5B",
+                "bbox": {
+                    "x0": 1700.9154545454546,
+                    "top": 1521.304,
+                    "x1": 1835.565,
+                    "bottom": 1541.58
+                }
+            },
+            {
+                "file_id": "file-SK16XSnXLsd178y1EkJu2e",
+                "bbox": {
+                    "x0": 2285.76,
+                    "top": 1521.304,
+                    "x1": 2421.89,
+                    "bottom": 1541.58
+                }
+            },
+            {
+                "file_id": "file-BaY1rzLXKcouU5tq9iw65h",
+                "bbox": {
+                    "x0": 509.52,
+                    "top": 1584.46,
+                    "x1": 646.2,
+                    "bottom": 1602.0120000000002
+                }
+            },
+            {
+                "file_id": "file-1jjrFqRzW6tv27KKhAVfPJ",
+                "bbox": {
+                    "x0": 1117.8,
+                    "top": 1632.4745454545455,
+                    "x1": 1248.3,
+                    "bottom": 1653.195
+                }
+            },
+            {
+                "file_id": "file-WEkdQaHMdbgaxHgWdLnZ19",
+                "bbox": {
+                    "x0": 1700.9154545454546,
+                    "top": 1653.195,
+                    "x1": 1835.565,
+                    "bottom": 1673.04
+                }
+            },
+            {
+                "file_id": "file-DnHXVYhCMcdTUF8GgVDum6",
+                "bbox": {
+                    "x0": 1956.162222222222,
+                    "top": 1653.195,
+                    "x1": 2176.055332777778,
+                    "bottom": 2027.8524
+                }
+            },
+            {
+                "file_id": "file-WZGvHur41fYHg6UybTgBHB",
+                "bbox": {
+                    "x0": 1370.7516652777779,
+                    "top": 1726.6588235294118,
+                    "x1": 1619.2440000000001,
+                    "bottom": 2027.8524
+                }
+            },
+            {
+                "file_id": "file-JGv9Ww4UyrD1t1dZg6BZxC",
+                "bbox": {
+                    "x0": 958.2,
+                    "top": 1826.2224324324327,
+                    "x1": 965.6492307692308,
+                    "bottom": 1903.5914285714289
+                }
+            },
+            {
+                "file_id": "file-Ko7aN3CvXQXQFhJ85WBWaL",
+                "bbox": {
+                    "x0": 2285.76,
+                    "top": 1883.017142857143,
+                    "x1": 2390.134285714286,
+                    "bottom": 1903.5914285714289
+                }
+            },
+            {
+                "file_id": "file-UMVF9fi8ikygHChrJyvZC2",
+                "bbox": {
+                    "x0": 1117.8,
+                    "top": 1903.5914285714289,
+                    "x1": 1243.4799999999998,
+                    "bottom": 1941.4850000000001
+                }
+            },
+            {
+                "file_id": "file-VSTzMQ7QhWDSnPJ1euZsmv",
+                "bbox": {
+                    "x0": 1117.8,
+                    "top": 1983.92,
+                    "x1": 1256.52,
+                    "bottom": 2017.6999999999998
+                }
+            },
+            {
+                "file_id": "file-NaUFKqnuXZvVWNSrFkiMJi",
+                "bbox": {
+                    "x0": 2285.76,
+                    "top": 2027.8524,
+                    "x1": 2421.89,
+                    "bottom": 2063.6099999999997
+                }
+            },
+            {
+                "file_id": "file-LCLtM6PhsEFXxeLW3nvqZC",
+                "bbox": {
+                    "x0": 1700.9154545454546,
+                    "top": 2041.2075,
+                    "x1": 1835.565,
+                    "bottom": 2063.6099999999997
+                }
+            }
+        ]
+    },
+    {
+        "title": "PLUMBING SCHEDULES 12654 000",
+        "page": 59,
+        "tables": [
+            {
+                "file_id": "file-GVnVWp7HfiAVt6C7TtvdQ6",
+                "bbox": {
+                    "x0": 107.88030170879999,
+                    "top": 25.67832045000023,
+                    "x1": 2735.8767599999996,
+                    "bottom": 2113.6795604502004
+                }
+            },
+            {
+                "file_id": "file-BzwW1eHPn5gWtDLqwyUeip",
+                "bbox": {
+                    "x0": 282.96002782088885,
+                    "top": 104.88101298000015,
+                    "x1": 2053.037187057778,
+                    "bottom": 207.480667104
+                }
+            },
+            {
+                "file_id": "file-8MW9zsUwTE8xVx14kN1vcf",
+                "bbox": {
+                    "x0": 282.96002782088885,
+                    "top": 221.6010352400001,
+                    "x1": 2053.037187057778,
+                    "bottom": 398.3046674064001
+                }
+            },
+            {
+                "file_id": "file-7SiCkjzZ2bLk5nWgbtxQxm",
+                "bbox": {
+                    "x0": 2293.922472,
+                    "top": 286.3551321000001,
+                    "x1": 2356.1976,
+                    "bottom": 323.7641487600002
+                }
+            },
+            {
+                "file_id": "file-CyBCqdsgqx1FkdqN569wCR",
+                "bbox": {
+                    "x0": 2641.5584400000002,
+                    "top": 333.3101700461539,
+                    "x1": 2712.54168,
+                    "bottom": 340.79907975
+                }
+            },
+            {
+                "file_id": "file-YWzNfu7AFJJdDDnznsrP2u",
+                "bbox": {
+                    "x0": 282.96002782088885,
+                    "top": 427.01964138000005,
+                    "x1": 2053.037187057778,
+                    "bottom": 518.5206452399999
+                }
+            },
+            {
+                "file_id": "file-KUJxtBUHxxXAMu2BAWLcYC",
+                "bbox": {
+                    "x0": 282.96002782088885,
+                    "top": 534.3618920400002,
+                    "x1": 2053.037187057778,
+                    "bottom": 612.376475385
+                }
+            },
+            {
+                "file_id": "file-664bFpo8ed6XDMsq4R6CDU",
+                "bbox": {
+                    "x0": 2765.3927999999996,
+                    "top": 574.3635314232857,
+                    "x1": 2788.43448,
+                    "bottom": 600.9161567822223
+                }
+            },
+            {
+                "file_id": "file-5YFNTvh4nexkd1kkWomUyu",
+                "bbox": {
+                    "x0": 2864.6402399999997,
+                    "top": 574.3635314232857,
+                    "x1": 2898.3555529036366,
+                    "bottom": 600.9161567822223
+                }
+            },
+            {
+                "file_id": "file-T6DuBwLst3Z2omFm4eQrWC",
+                "bbox": {
+                    "x0": 282.96002782088885,
+                    "top": 630.75160125,
+                    "x1": 2053.037187057778,
+                    "bottom": 737.011102542353
+                }
+            },
+            {
+                "file_id": "file-Ld8osKSLeJYr66CtEkQf1w",
+                "bbox": {
+                    "x0": 2316.5602338331037,
+                    "top": 811.8879324120002,
+                    "x1": 2347.5584009657146,
+                    "bottom": 820.9184067960002
+                }
+            },
+            {
+                "file_id": "file-BztrgKGj2Ed9AG8iEHNAjn",
+                "bbox": {
+                    "x0": 1684.56,
+                    "top": 1620.00070632,
+                    "x1": 2028.9588,
+                    "bottom": 1697.6401218
+                }
+            },
+            {
+                "file_id": "file-HpoD6h448c6hnmEte1EuYb",
+                "bbox": {
+                    "x0": 1713.3771428571429,
+                    "top": 1894.0403145,
+                    "x1": 1745.28,
+                    "bottom": 1907.13
+                }
+            }
+        ]
+    },
+    {
+        "title": "MECHANICAL DETAILS & SCHEDULES",
+        "page": 79,
+        "tables": [
+            {
+                "file_id": "file-9q8o5af6RzTJ8PTQ6DDutk",
+                "bbox": {
+                    "x0": 821.8791993527999,
+                    "top": 65.03734511999983,
+                    "x1": 2702.4779392592595,
+                    "bottom": 200.39938387034482
+                }
+            },
+            {
+                "file_id": "file-AVkeRj2wmgy3k9LSweBSvV",
+                "bbox": {
+                    "x0": 1020.2400000000001,
+                    "top": 305.1659044799999,
+                    "x1": 2702.4779392592595,
+                    "bottom": 440.64093701538474
+                }
+            },
+            {
+                "file_id": "file-8tfoWuxN3LKcTgz25eZoLz",
+                "bbox": {
+                    "x0": 416.88,
+                    "top": 501.9592568759999,
+                    "x1": 1250.0399999999997,
+                    "bottom": 740.52
+                }
+            },
+            {
+                "file_id": "file-2HjWMbaf3xxCMS1P32yWPB",
+                "bbox": {
+                    "x0": 1303.68,
+                    "top": 501.9592568759999,
+                    "x1": 2702.4779392592595,
+                    "bottom": 597.3028656911429
+                }
+            },
+            {
+                "file_id": "file-HoNyiqZdwJzirELWPvdWVv",
+                "bbox": {
+                    "x0": 2765.3927999999996,
+                    "top": 584.5500248030944,
+                    "x1": 2788.43448,
+                    "bottom": 611.004017466182
+                }
+            },
+            {
+                "file_id": "file-R965sehNQAt2T65JL98CCS",
+                "bbox": {
+                    "x0": 2827.67184,
+                    "top": 584.5500248030944,
+                    "x1": 2833.0704,
+                    "bottom": 611.004017466182
+                }
+            },
+            {
+                "file_id": "file-MGABhiymGy14hGgyAXCUkm",
+                "bbox": {
+                    "x0": 2864.6402399999997,
+                    "top": 584.5500248030944,
+                    "x1": 2898.366620230909,
+                    "bottom": 611.004017466182
+                }
+            },
+            {
+                "file_id": "file-MEyGPt4ifm86ZSLSQXRboJ",
+                "bbox": {
+                    "x0": 1410.5999999999997,
+                    "top": 688.1907157956923,
+                    "x1": 2702.4779392592595,
+                    "bottom": 792.3594719790001
+                }
+            },
+            {
+                "file_id": "file-VoctPHxA8XYXgaVRRPLMX7",
+                "bbox": {
+                    "x0": 1434.0,
+                    "top": 830.0358007680002,
+                    "x1": 2702.4779392592595,
+                    "bottom": 922.7994270537142
+                }
+            },
+            {
+                "file_id": "file-TUZaL4vEaNQVWve7M1dWYX",
+                "bbox": {
+                    "x0": 1419.135,
+                    "top": 979.795756152,
+                    "x1": 2702.4779392592595,
+                    "bottom": 1113.59999794
+                }
+            },
+            {
+                "file_id": "file-1Nc6enpUDXwnXSbtozoBu2",
+                "bbox": {
+                    "x0": 1566.029565465,
+                    "top": 1199.1585749160001,
+                    "x1": 2702.4779392592595,
+                    "bottom": 1316.619586746
+                }
+            },
+            {
+                "file_id": "file-38ko8FZgsKx9Xtt5xirphK",
+                "bbox": {
+                    "x0": 1322.3014616879998,
+                    "top": 1393.919612232,
+                    "x1": 2702.4779392592595,
+                    "bottom": 2012.3998567784572
+                }
+            }
+        ]
+    },
+    {
+        "title": "MECHANICAL EQUIPMENT SCHEDULES",
+        "page": 105,
+        "tables": [
+            {
+                "file_id": "file-3qo73t9ixxuEdoSPRXtTGJ",
+                "bbox": {
+                    "x0": 107.8799566248,
+                    "top": 35.903575536000155,
+                    "x1": 2735.8767599999996,
+                    "bottom": 2123.8795291872
+                }
+            },
+            {
+                "file_id": "file-98zWATtbKmQJcVDdwSXQ7g",
+                "bbox": {
+                    "x0": 937.8000000000001,
+                    "top": 455.8798443599999,
+                    "x1": 2392.91172,
+                    "bottom": 878.1610590290526
+                }
+            },
+            {
+                "file_id": "file-Kcpi4RmUnAv3H45ivYcRzt",
+                "bbox": {
+                    "x0": 2765.3927999999996,
+                    "top": 584.705490024,
+                    "x1": 2788.43448,
+                    "bottom": 612.9244252896001
+                }
+            },
+            {
+                "file_id": "file-WCTsFiHK7XBpiwfd3Diqr5",
+                "bbox": {
+                    "x0": 2864.6402399999997,
+                    "top": 584.705490024,
+                    "x1": 2898.366620230909,
+                    "bottom": 612.9244252896001
+                }
+            }
+        ]
+    },
+    {
+        "title": "LIGHTING FIXTURE & CONTROL SCHEDULE",
+        "page": 106,
+        "tables": [
+            {
+                "file_id": "file-3XVTXLcH8mNTe4E9FXPhBL",
+                "bbox": {
+                    "x0": 107.8799566248,
+                    "top": 35.90644464000015,
+                    "x1": 2735.8767599999996,
+                    "bottom": 2123.8795291872
+                }
+            },
+            {
+                "file_id": "file-7hQdXmSVayFc9mTQpiphmE",
+                "bbox": {
+                    "x0": 1280.1599999999999,
+                    "top": 403.6806890400003,
+                    "x1": 2390.4080399999993,
+                    "bottom": 774.7794252450001
+                }
+            },
+            {
+                "file_id": "file-6QeFs6cuf22gWSm35SR8Qr",
+                "bbox": {
+                    "x0": 2765.3927999999996,
+                    "top": 584.7110003180691,
+                    "x1": 2788.43448,
+                    "bottom": 612.1423789075556
+                }
+            },
+            {
+                "file_id": "file-LAWyvQGGg9HNjd8SW9Dr4S",
+                "bbox": {
+                    "x0": 2864.6402399999997,
+                    "top": 584.7110003180691,
+                    "x1": 2898.366620230909,
+                    "bottom": 612.1423789075556
+                }
+            },
+            {
+                "file_id": "file-8Hdw61xReWza3QDUG7K9Gi",
+                "bbox": {
+                    "x0": 646.4399999999999,
+                    "top": 849.7176277500002,
+                    "x1": 2390.4080399999993,
+                    "bottom": 2072.1595453636
+                }
+            }
+        ]
+    },
+    {
+        "title": "ELECTRICAL PANELBOARD SCHEDULES",
+        "page": 107,
+        "tables": [
+            {
+                "file_id": "file-4t89juo7RLFygh7ieEA7tJ",
+                "bbox": {
+                    "x0": 107.8799566248,
+                    "top": 35.88102650400024,
+                    "x1": 2735.8767599999996,
+                    "bottom": 2123.8795291872
+                }
+            },
+            {
+                "file_id": "file-JarfrNqzoVSbu4QauD2tYt",
+                "bbox": {
+                    "x0": 339.9599803150243,
+                    "top": 107.56067389333344,
+                    "x1": 1203.9599328354145,
+                    "bottom": 743.8814133600001
+                }
+            },
+            {
+                "file_id": "file-33AoJNQigK2MNyufFunTg3",
+                "bbox": {
+                    "x0": 1347.960009231795,
+                    "top": 190.44621032,
+                    "x1": 2211.96216,
+                    "bottom": 743.8814133600001
+                }
+            },
+            {
+                "file_id": "file-6JT8w6WkGJeAnGLSC654TN",
+                "bbox": {
+                    "x0": 2765.3927999999996,
+                    "top": 583.8132127364211,
+                    "x1": 2788.43448,
+                    "bottom": 610.7418474807273
+                }
+            },
+            {
+                "file_id": "file-Q9CqdJQ8bsfuwDH2NQKRVV",
+                "bbox": {
+                    "x0": 2864.6402399999997,
+                    "top": 583.8132127364211,
+                    "x1": 2898.366620230909,
+                    "bottom": 610.7418474807273
+                }
+            },
+            {
+                "file_id": "file-PuqnoHbQbRYxbaUqbhKi2Z",
+                "bbox": {
+                    "x0": 339.9599803150243,
+                    "top": 779.8804990100001,
+                    "x1": 1203.9599328354145,
+                    "bottom": 1416.8707010700666
+                }
+            },
+            {
+                "file_id": "file-MHxDrG1wvvSPqvX7dzDJKJ",
+                "bbox": {
+                    "x0": 1347.960009231795,
+                    "top": 779.8804990100001,
+                    "x1": 2211.96216,
+                    "bottom": 1416.8707010700666
+                }
+            },
+            {
+                "file_id": "file-T54Q3nDmToGD8CPmAJ269B",
+                "bbox": {
+                    "x0": 339.9599803150243,
+                    "top": 1451.880112621,
+                    "x1": 1203.9599328354145,
+                    "bottom": 2087.8794843672
+                }
+            },
+            {
+                "file_id": "file-HMWWMk34QHAsNt8KkwnDP7",
+                "bbox": {
+                    "x0": 1347.960009231795,
+                    "top": 1451.880112621,
+                    "x1": 2211.96216,
+                    "bottom": 2087.8794843672
+                }
+            }
+        ]
+    },
+    {
+        "title": "ELECTRICAL PANELBOARD SCHEDULES",
+        "page": 108,
+        "tables": [
+            {
+                "file_id": "file-Er3DbAUwujFeXvPMaNsbvE",
+                "bbox": {
+                    "x0": 107.8799566248,
+                    "top": 35.88102650400024,
+                    "x1": 2735.8767599999996,
+                    "bottom": 2123.8795291872
+                }
+            },
+            {
+                "file_id": "file-D73fkKcSBYjHgkF6D69ffW",
+                "bbox": {
+                    "x0": 339.95999415827583,
+                    "top": 108.94085940800018,
+                    "x1": 1203.9599416822757,
+                    "bottom": 662.8807933200002
+                }
+            },
+            {
+                "file_id": "file-Xw1pq16bbo9iHgMY3w17zt",
+                "bbox": {
+                    "x0": 1347.9600305872132,
+                    "top": 108.94085940800018,
+                    "x1": 2211.96216,
+                    "bottom": 662.8807933200002
+                }
+            },
+            {
+                "file_id": "file-BRKuwXkUmmzZhAKgSoDsGd",
+                "bbox": {
+                    "x0": 2765.3927999999996,
+                    "top": 583.8132127364211,
+                    "x1": 2788.43448,
+                    "bottom": 611.806313161143
+                }
+            },
+            {
+                "file_id": "file-3nkTSvJQiFk129EDWrB8TT",
+                "bbox": {
+                    "x0": 2864.6402399999997,
+                    "top": 583.8132127364211,
+                    "x1": 2898.366620230909,
+                    "bottom": 611.806313161143
+                }
+            },
+            {
+                "file_id": "file-SD2rbmD7y83nynkQHqGacT",
+                "bbox": {
+                    "x0": 339.95999415827583,
+                    "top": 698.8811171600001,
+                    "x1": 1203.9599416822757,
+                    "bottom": 1334.8799059028572
+                }
+            },
+            {
+                "file_id": "file-X3xRG3feF4zsg8FaSvpWHS",
+                "bbox": {
+                    "x0": 1347.9600305872132,
+                    "top": 698.8811171600001,
+                    "x1": 2211.96216,
+                    "bottom": 1417.3660516051
+                }
+            },
+            {
+                "file_id": "file-C4fChSKJAS1apKkiXZHJGi",
+                "bbox": {
+                    "x0": 339.95999415827583,
+                    "top": 1451.880112621,
+                    "x1": 1203.9599416822757,
+                    "bottom": 2087.8794843672
+                }
+            },
+            {
+                "file_id": "file-5bJ11SE6NkGkAQc5nGqDHf",
+                "bbox": {
+                    "x0": 1347.9600305872132,
+                    "top": 1451.880112621,
+                    "x1": 2211.96216,
+                    "bottom": 2087.8794843672
+                }
+            }
+        ]
+    },
+    {
+        "title": "SECURITY SYMBOLS LEGEND, NOTES AND SCHEDULES",
+        "page": 129,
+        "tables": [
+            {
+                "file_id": "file-5dP7CDBh5fUAnJE7z1eRCt",
+                "bbox": {
+                    "x0": 653.840337196,
+                    "top": 53.87686300000011,
+                    "x1": 1742.1063343466667,
+                    "bottom": 292.3518001800001
+                }
+            },
+            {
+                "file_id": "file-DCwj1fvK3EAw9HvBkNU1Ts",
+                "bbox": {
+                    "x0": 1751.3997586171429,
+                    "top": 53.87686300000011,
+                    "x1": 2223.83508,
+                    "bottom": 1061.8825163400002
+                }
+            },
+            {
+                "file_id": "file-Ui6AAy88e4mqJMPoTajNzK",
+                "bbox": {
+                    "x0": 2241.83028,
+                    "top": 53.87686300000011,
+                    "x1": 2714.5228285714284,
+                    "bottom": 1107.7812288119999
+                }
+            },
+            {
+                "file_id": "file-7r1aMTTEccE9VCK13Lb5op",
+                "bbox": {
+                    "x0": 653.840337196,
+                    "top": 324.60000000000014,
+                    "x1": 1742.1063343466667,
+                    "bottom": 457.9200000000001
+                }
+            },
+            {
+                "file_id": "file-EuXQy3Mbzp1QZLbXt9BVHW",
+                "bbox": {
+                    "x0": 761.657142857143,
+                    "top": 468.84000000000015,
+                    "x1": 1742.1063343466667,
+                    "bottom": 693.8400000000001
+                }
+            },
+            {
+                "file_id": "file-CPdyX97eXJdQjuYrRkLTdG",
+                "bbox": {
+                    "x0": 2761.5590399999996,
+                    "top": 584.7045397878462,
+                    "x1": 2784.60072,
+                    "bottom": 612.4834182435001
+                }
+            },
+            {
+                "file_id": "file-PA3RscorRj5n1A3DcGAZi8",
+                "bbox": {
+                    "x0": 2860.8064799999997,
+                    "top": 584.7045397878462,
+                    "x1": 2894.5335377836363,
+                    "bottom": 612.4834182435001
+                }
+            },
+            {
+                "file_id": "file-XcBbdybM3kYpuHcnqQrHeo",
+                "bbox": {
+                    "x0": 761.657142857143,
+                    "top": 706.9200000000001,
+                    "x1": 1400.52,
+                    "bottom": 903.48
+                }
+            },
+            {
+                "file_id": "file-4QBjM5nNHzyJmifoSY48CG",
+                "bbox": {
+                    "x0": 2211.04284,
+                    "top": 1121.460668955,
+                    "x1": 2714.5228285714284,
+                    "bottom": 1239.6304845569998
+                }
+            }
+        ]
+    }
+]

@@ -1,0 +1,50 @@
+[
+    {
+        "S-1, Storage/Accessory": {
+            "x0": 2079.72,
+            "x1": 2133.72,
+            "top": 475.0799999999999,
+            "bottom": 511.0799999999999
+        }
+    },
+    {
+        "B, Classroom, Less Than 50 Occupants": {
+            "x0": 1791.0,
+            "x1": 1845.0,
+            "top": 523.0799999999999,
+            "bottom": 559.0799999999999
+        }
+    },
+    {
+        "B, Business Concentrated": {
+            "x0": 1791.0,
+            "x1": 1845.0,
+            "top": 475.0799999999999,
+            "bottom": 511.0799999999999
+        }
+    },
+    {
+        "B, Business": {
+            "x0": 1502.28,
+            "x1": 1556.28,
+            "top": 527.28,
+            "bottom": 563.28
+        }
+    },
+    {
+        "B, SF Assembly or 50 Occupants Unconcentrated, Less Than 750": {
+            "x0": 1502.28,
+            "x1": 1556.28,
+            "top": 475.0799999999999,
+            "bottom": 511.0799999999999
+        }
+    },
+    {
+        "A-3, Occupants Assembly Unconcentrated, Over 49": {
+            "x0": 1213.56,
+            "x1": 1267.56,
+            "top": 475.0799999999999,
+            "bottom": 511.0799999999999
+        }
+    }
+]

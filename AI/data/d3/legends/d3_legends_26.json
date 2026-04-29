@@ -1,0 +1,66 @@
+[
+    {
+        "A1 VARIES 24\" 0.95 x NRC 24\" ROCKFON SONAR": {
+            "x0": 117.6,
+            "x1": 149.16,
+            "top": 89.2800000000002,
+            "bottom": 120.72000000000003
+        }
+    },
+    {
+        "C1 VARIES 5/8\" GYPSUM BD ON 3-5/8\"": {
+            "x0": 117.6,
+            "x1": 149.16,
+            "top": 134.27999999999997,
+            "bottom": 165.72000000000003
+        }
+    },
+    {
+        "D2 VARIES EXTERIOR 7/8\" HAT CHANNEL FINISH SYSTEM FURRING": {
+            "x0": 117.6,
+            "x1": 149.16,
+            "top": 183.72000000000003,
+            "bottom": 215.27999999999997
+        }
+    },
+    {
+        "F1 VARIES EXPOSED STRUCTURE,": {
+            "x0": 117.6,
+            "x1": 149.16,
+            "top": 232.20000000000005,
+            "bottom": 263.6399999999999
+        }
+    },
+    {
+        "M1 VARIES PAINTED SUBSTRATE COMPOSITE -EXTERIOR WOOD": {
+            "x0": 117.6,
+            "x1": 149.16,
+            "top": 278.28,
+            "bottom": 309.72
+        }
+    },
+    {
+        "S1 VARIES PAINTED WOOD PLANK": {
+            "x0": 688.0799999999999,
+            "x1": 719.64,
+            "top": 89.2800000000002,
+            "bottom": 120.72000000000003
+        }
+    },
+    {
+        "S2 VARIES FAUX WOOD BEAM SYSTEM": {
+            "x0": 688.0799999999999,
+            "x1": 719.64,
+            "top": 133.92000000000007,
+            "bottom": 166.92000000000007
+        }
+    },
+    {
+        "T1 VARIES MOZ CORRUGATED PANEL": {
+            "x0": 688.0799999999999,
+            "x1": 719.64,
+            "top": 182.03999999999996,
+            "bottom": 213.5999999999999
+        }
+    }
+]

@@ -82,7 +82,7 @@ export function TakeoffToolbar({
     mt === "linear" ? "Lin" : mt === "area" ? "Area" : "Cnt";
 
   return (
-    <div className="flex max-w-full items-center gap-0.5 overflow-x-auto rounded-3xl border border-border bg-card/80 p-0.5 shadow-sm">
+    <div className="flex max-w-full items-center gap-0.5 overflow-x-auto rounded-3xl border border-border bg-card/80 p-0.5">
       {conditions.length > 0 && onConditionChange ? (
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -159,6 +159,8 @@ export function TakeoffToolbar({
           key={id}
           type="button"
           title={`${label} (${shortcut})`}
+          aria-label={`${label} tool, shortcut ${shortcut}`}
+          aria-pressed={active === id}
           onClick={() => onChange(id)}
           className={cn(
             "flex h-8 shrink-0 items-center gap-1.5 rounded-3xl px-2 text-xs font-medium transition-colors",

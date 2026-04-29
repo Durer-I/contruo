@@ -1110,7 +1110,18 @@ async def process_dodopayments_webhook(
         wid = hashlib.sha256(raw_body).hexdigest()
 
     secret = (settings.dodopayments_webhook_secret or "").strip()
-    unsafe_dev = not secret and settings.is_development
+    # Only allow unsigned webhooks when explicitly running locally for development
+    # AND the request originated from localhost. Any deployed env (even one
+    # with environment=development) must have a real secret.
+    forwarded_for = (headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    client_host = (forwarded_for or headers.get("host") or "").lower()
+    is_local_caller = client_host.startswith(("127.0.0.1", "localhost", "::1"))
+    unsafe_dev = (
+        not secret
+        and settings.is_development
+        and is_local_caller
+        and settings.app_url.startswith(("http://localhost", "http://127.0.0.1"))
+    )
 
     if not secret and not unsafe_dev:
         logger.warning("DodoPayments webhook rejected: DODOPAYMENTS_WEBHOOK_SECRET not set")

@@ -23,6 +23,8 @@ export interface MeasurementInfo {
   override_value: number | null;
   label: string | null;
   created_by: string;
+  /** Optimistic-lock counter; passed back via If-Match on PATCH. */
+  version?: number;
   created_at: string;
   updated_at: string;
   derived_quantities?: DerivedQuantityInfo[];

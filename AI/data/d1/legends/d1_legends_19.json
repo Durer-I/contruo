@@ -1,0 +1,58 @@
+[
+    {
+        "ACT-1 24\" CEILING x 24\" ACOUSTICAL TILE": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 219.77999999999997,
+            "bottom": 255.7800000000002
+        }
+    },
+    {
+        "ACT-2 24\" ACOUSTIC x 48\" PAINTABLE CEILING PANEL": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 273.78,
+            "bottom": 309.7800000000002
+        }
+    },
+    {
+        "ACT-3 24\" CEILING APPROVED x 24\" PERFORATED (USG EQUAL) DANOLINE ACT OR": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 327.78,
+            "bottom": 363.7800000000002
+        }
+    },
+    {
+        "ACT-4 24\" IN CEILING SUSPENDED x 60\" ACOUSTICAL GRID TILE": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 381.78,
+            "bottom": 417.7800000000002
+        }
+    },
+    {
+        "GYP-1 GYPSUM": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 435.78,
+            "bottom": 471.7800000000002
+        }
+    },
+    {
+        "WD-1 WOOD CEILINGS APPROVED SLAT PLUS EQUAL) CEILING OR (USG": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 489.78,
+            "bottom": 525.7800000000002
+        }
+    },
+    {
+        "EXP-1 EXPOSED PAINTED CEILING -": {
+            "x0": 2461.26,
+            "x1": 2551.26,
+            "top": 165.7800000000002,
+            "bottom": 201.7800000000002
+        }
+    }
+]

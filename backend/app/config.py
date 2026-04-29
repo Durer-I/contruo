@@ -39,9 +39,8 @@ class Settings(BaseSettings):
     #: When set, pure per-seat: base `quantity` 1 + Seat add-on `quantity` = paid seats (min 1 at checkout).
     dodopayments_seat_addon_id: str = ""
 
-    # Redis / Celery
-    # redis_url: str = "redis://localhost:6379/0"
-    redis_url: str = 'redis://default:xi9rQA4Xu9pD9fcRvhsnb1RTlcewMFNg@redis-11849.c261.us-east-1-4.ec2.cloud.redislabs.com:11849'
+    # Redis / Celery — must be supplied via environment in any deployed env.
+    redis_url: str = "redis://localhost:6379/0"
 
     # Email
     email_provider: str = "resend"
@@ -63,6 +62,25 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    def assert_production_secrets(self) -> None:
+        """Fail fast on startup if required secrets are missing/insecure in prod."""
+        if not self.is_production:
+            return
+        problems: list[str] = []
+        if not self.redis_url or self.redis_url.startswith("redis://localhost"):
+            problems.append("REDIS_URL must be set to a non-localhost URL")
+        if not self.dodopayments_webhook_secret:
+            problems.append("DODOPAYMENTS_WEBHOOK_SECRET must be set")
+        if not self.supabase_service_role_key:
+            problems.append("SUPABASE_SERVICE_ROLE_KEY must be set")
+        if "postgres:postgres@localhost" in self.database_url:
+            problems.append("DATABASE_URL must not use the local default password")
+        if problems:
+            raise RuntimeError(
+                "Refusing to start in production with insecure config:\n  - "
+                + "\n  - ".join(problems)
+            )
 
 
 @lru_cache

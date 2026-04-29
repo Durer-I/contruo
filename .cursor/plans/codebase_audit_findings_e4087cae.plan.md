@@ -4,28 +4,28 @@ overview: Comprehensive read-only audit of the Contruo codebase covering securit
 todos:
   - id: p0-secrets
     content: "P0: Rotate Redis credential and remove hardcoded URL from backend/app/config.py; add gitleaks to CI"
-    status: pending
+    status: completed
   - id: p0-guest
     content: "P0: Enforce guest_project_access scoping in project_service list/get/plans/sheets/liveblocks/exports"
-    status: pending
+    status: completed
   - id: p0-rls
     content: "P0: Add cross-org access integration tests to harden the org_id filter defense"
     status: pending
   - id: p0-webhook
     content: "P0: Require DODOPAYMENTS_WEBHOOK_SECRET outside localhost; remove dev unsafe_unwrap path in deployed envs"
-    status: pending
+    status: completed
   - id: p0-500
     content: "P0: Sanitize 500 responses in middleware/error_handler.py; add request-id correlation"
-    status: pending
+    status: completed
   - id: p0-ratelimit
     content: "P0: Add slowapi rate limiting (auth, webhooks, exports)"
-    status: pending
+    status: completed
   - id: p0-docs
     content: "P0: Disable /docs and /redoc in production; trim /health response"
-    status: pending
+    status: completed
   - id: p1-pagination
     content: "P1: Add cursor pagination + default limits to measurements and projects list endpoints"
-    status: pending
+    status: completed
   - id: p1-refetch
     content: "P1: Replace per-edit full refetch with optimistic local updates + targeted broadcast in plan-viewer-workspace"
     status: pending
@@ -34,19 +34,19 @@ todos:
     status: pending
   - id: p1-locking
     content: "P1: Add version column + If-Match handling on measurement updates; server-enforce select-locks"
-    status: pending
+    status: completed
   - id: p1-darktheme
     content: "P1: Default theme to dark; consolidate globals.css; delete globals_O.css"
-    status: pending
+    status: completed
   - id: p1-errors
     content: "P1: Add app/error.tsx ErrorBoundary, install sonner, replace silent .catch(() => {}) with toast"
     status: pending
   - id: p1-modal
     content: "P1: Fix welcome-modal.tsx render-time setState (use useEffect or lazy initializer)"
-    status: pending
+    status: completed
   - id: p1-settings
     content: "P1: Uncomment Settings General tab in settings-subnav.tsx"
-    status: pending
+    status: completed
   - id: p1-megacomp
     content: "P1: Split plan-viewer-workspace.tsx, quantities-panel.tsx, condition-manager-panel.tsx, measurement_service.py"
     status: pending
@@ -64,7 +64,7 @@ todos:
     status: pending
   - id: p2-pdfworker
     content: "P2: Self-host pdf.js worker in frontend/public/ instead of unpkg CDN"
-    status: pending
+    status: completed
   - id: p3-dupes
     content: "P3: Extract plan_to_response(), formatMeasurementTypeLabel(), test conftest.py; route Liveblocks auth through shared api client"
     status: pending

@@ -55,8 +55,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       setUser(data.user);
-    } catch {
-      // Do not clear user: session may be valid while /me fails briefly; clearing forces viewer UI and infinite loaders.
+    } catch (e) {
+      // Don't clear the existing user — a transient /me failure shouldn't kick the
+      // user back to a viewer-shaped UI — but log so engineers can see flakiness.
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.warn("[auth] /auth/me failed (kept previous user):", e);
+      }
     }
   }, []);
 

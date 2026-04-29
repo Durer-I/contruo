@@ -1,0 +1,362 @@
+[
+    {
+        "page": 1,
+        "title": "COVER"
+    },
+    {
+        "page": 2,
+        "title": "GENERAL INFORMATION AND ABBREVIATIONS"
+    },
+    {
+        "page": 3,
+        "title": "CODE SUMMARY & CALCULATIONS"
+    },
+    {
+        "page": 4,
+        "title": "FLORIDA PRODUCT APPROVALS"
+    },
+    {
+        "page": 5,
+        "title": "UL ASSEMBLIES"
+    },
+    {
+        "page": 6,
+        "title": "UL ASSEMBLIES"
+    },
+    {
+        "page": 7,
+        "title": "UL ASSEMBLIES"
+    },
+    {
+        "page": 8,
+        "title": "PARTITION TYPES & NOTES"
+    },
+    {
+        "page": 9,
+        "title": "TYPICAL PARTITION DETAILS"
+    },
+    {
+        "page": 10,
+        "title": "LIFE SAFETY PLANS"
+    },
+    {
+        "page": 11,
+        "title": "DEMOLITION SITE PLAN"
+    },
+    {
+        "page": 12,
+        "title": "ARCHITECTURAL SITE PLAN"
+    },
+    {
+        "page": 13,
+        "title": "CONSTRUCTION STAGING PLAN"
+    },
+    {
+        "page": 14,
+        "title": "SITE PLAN DETAILS"
+    },
+    {
+        "page": 15,
+        "title": "SITE PLAN DETAILS"
+    },
+    {
+        "page": 16,
+        "title": "SITE DETAILS - EXISTING STORAGE BUILDING"
+    },
+    {
+        "page": 17,
+        "title": "SLAB PLAN - APPARATUS BAY"
+    },
+    {
+        "page": 18,
+        "title": "SLAB PLAN - FIRST FLOOR"
+    },
+    {
+        "page": 19,
+        "title": "SLAB PLAN - SECOND FLOOR"
+    },
+    {
+        "page": 20,
+        "title": "ARCHITECTURAL PLAN - APPARATUS BAY"
+    },
+    {
+        "page": 21,
+        "title": "ARCHITECTURAL PLAN - FIRST FLOOR"
+    },
+    {
+        "page": 22,
+        "title": "ARCHITECTURAL PLAN - SECOND FLOOR"
+    },
+    {
+        "page": 23,
+        "title": "ARCHITECTURAL PLAN - STAIR TOWER"
+    },
+    {
+        "page": 24,
+        "title": "DIMENSION PLAN - APPARATUS BAY"
+    },
+    {
+        "page": 25,
+        "title": "DIMENSION PLAN - FIRST FLOOR"
+    },
+    {
+        "page": 26,
+        "title": "DIMENSION PLAN - SECOND FLOOR"
+    },
+    {
+        "page": 27,
+        "title": "REFLECTED CEILING PLAN - APPARATUS LEVEL & FIRST FLOOR"
+    },
+    {
+        "page": 28,
+        "title": "REFLECTED CEILING PLAN - SECOND FLOOR"
+    },
+    {
+        "page": 29,
+        "title": "ROOF PLAN"
+    },
+    {
+        "page": 30,
+        "title": "ROOF PLANS"
+    },
+    {
+        "page": 31,
+        "title": "INTERIOR FINISH SCHEDULE, LEGENDS AND DETAILS"
+    },
+    {
+        "page": 32,
+        "title": "FINISH PLAN -APPARATUS BAY"
+    },
+    {
+        "page": 33,
+        "title": "FINISH PLAN - FIRST FLOOR"
+    },
+    {
+        "page": 34,
+        "title": "FINISH PLAN - SECOND FLOOR"
+    },
+    {
+        "page": 35,
+        "title": "EQUIPMENT AND FURNITURE PLANS"
+    },
+    {
+        "page": 36,
+        "title": "SIGNAGE TYPES & NOTES"
+    },
+    {
+        "page": 37,
+        "title": "EXTERIOR FINISH LEGEND"
+    },
+    {
+        "page": 38,
+        "title": "EXTERIOR ELEVATIONS"
+    },
+    {
+        "page": 39,
+        "title": "EXTERIOR ELEVATIONS"
+    },
+    {
+        "page": 40,
+        "title": "INTERIOR ELEVATIONS"
+    },
+    {
+        "page": 41,
+        "title": "INTERIOR ELEVATIONS"
+    },
+    {
+        "page": 42,
+        "title": "INTERIOR ELEVATIONS"
+    },
+    {
+        "page": 43,
+        "title": "INTERIOR ELEVATIONS"
+    },
+    {
+        "page": 44,
+        "title": "INTERIOR ELEVATIONS"
+    },
+    {
+        "page": 45,
+        "title": "BUILDING SECTIONS"
+    },
+    {
+        "page": 46,
+        "title": "BUILDING SECTIONS"
+    },
+    {
+        "page": 47,
+        "title": "BUILDING SECTIONS"
+    },
+    {
+        "page": 48,
+        "title": "BUILDING SECTIONS"
+    },
+    {
+        "page": 49,
+        "title": "BUILDING SECTIONS"
+    },
+    {
+        "page": 50,
+        "title": "WALL SECTIONS"
+    },
+    {
+        "page": 51,
+        "title": "WALL SECTIONS"
+    },
+    {
+        "page": 52,
+        "title": "WALL SECTIONS"
+    },
+    {
+        "page": 53,
+        "title": "WALL SECTIONS"
+    },
+    {
+        "page": 54,
+        "title": "WALL SECTIONS"
+    },
+    {
+        "page": 55,
+        "title": "ENLARGED FLOOR PLANS"
+    },
+    {
+        "page": 56,
+        "title": "ENLARGED RCP'S"
+    },
+    {
+        "page": 57,
+        "title": "TOILET ACCESSORY SCHEDULE & MOUNTING HEIGHTS"
+    },
+    {
+        "page": 58,
+        "title": "ENLARGED FLOOR PLANS - TOILET"
+    },
+    {
+        "page": 59,
+        "title": "ENLARGED STAIR PLANS - INTERIOR"
+    },
+    {
+        "page": 60,
+        "title": "ENLARGED STAIR PLANS - EXTERIOR"
+    },
+    {
+        "page": 61,
+        "title": "STAIR / LIFT SECTIONS"
+    },
+    {
+        "page": 62,
+        "title": "ENLARGED STAIR SECTIONS"
+    },
+    {
+        "page": 63,
+        "title": "ENLARGED STAIR SECTIONS"
+    },
+    {
+        "page": 64,
+        "title": "DOOR SCHEDULE, DOOR AND FRAME TYPES"
+    },
+    {
+        "page": 65,
+        "title": "STOREFRONT, WINDOWS AND LOUVER TYPES, AND DETAILS"
+    },
+    {
+        "page": 66,
+        "title": "DETAILS - DOOR / WINDOW / LOUVER"
+    },
+    {
+        "page": 67,
+        "title": "DETAILS - DOOR / WINDOW"
+    },
+    {
+        "page": 68,
+        "title": "DETAILS - DOOR / WINDOW"
+    },
+    {
+        "page": 69,
+        "title": "DETAILS - STOREFRONT"
+    },
+    {
+        "page": 70,
+        "title": "DETAILS - STOREFRONT"
+    },
+    {
+        "page": 71,
+        "title": "DETAILS - EXTERIOR"
+    },
+    {
+        "page": 72,
+        "title": "DETAILS - EXTERIOR"
+    },
+    {
+        "page": 73,
+        "title": "DETAILS - EXTERIOR"
+    },
+    {
+        "page": 74,
+        "title": "DETAILS - EXTERIOR"
+    },
+    {
+        "page": 75,
+        "title": "DETAILS - CEILING"
+    },
+    {
+        "page": 76,
+        "title": "DETAILS - ROOF"
+    },
+    {
+        "page": 77,
+        "title": "DETAILS - ROOF"
+    },
+    {
+        "page": 78,
+        "title": "DETAILS - INTERIOR"
+    },
+    {
+        "page": 79,
+        "title": "DETAILS - INTERIOR"
+    },
+    {
+        "page": 80,
+        "title": "MILLWORK & CASEWORK DETAILS"
+    },
+    {
+        "page": 81,
+        "title": "DETAILS - STAIR & LIFT"
+    },
+    {
+        "page": 82,
+        "title": "DETAILS - TYP. STAIR"
+    },
+    {
+        "page": 83,
+        "title": "DETAILS - EXTERIOR STAIR"
+    },
+    {
+        "page": 84,
+        "title": "ARCHITECTURAL RENDERING - FOR REFERENCE ONLY"
+    },
+    {
+        "page": 85,
+        "title": "ARCHITECTURAL RENDERING - FOR REFERENCE ONLY"
+    },
+    {
+        "page": 86,
+        "title": "ARCHITECTURAL RENDERING - FOR REFERENCE ONLY"
+    },
+    {
+        "page": 87,
+        "title": "ARCHITECTURAL RENDERING - FOR REFERENCE ONLY"
+    },
+    {
+        "page": 88,
+        "title": "ARCHITECTURAL RENDERING - FOR REFERENCE ONLY"
+    },
+    {
+        "page": 89,
+        "title": "ARCHITECTURAL RENDERING - FOR REFERENCE ONLY"
+    },
+    {
+        "page": 90,
+        "title": "ARCHITECTURAL RENDERING - FOR REFERENCE ONLY"
+    }
+]

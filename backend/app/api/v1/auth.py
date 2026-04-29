@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import Response
 
 from app.dependencies import get_db
+from app.middleware.auth import get_current_user, AuthContext
+from app.middleware.rate_limit import limiter
 from app.schemas.auth import (
     RegisterRequest,
     LoginRequest,
@@ -11,13 +14,18 @@ from app.schemas.auth import (
     MeResponse,
 )
 from app.services import auth_service
-from app.middleware.auth import get_current_user, AuthContext
 
 router = APIRouter(prefix="/auth")
 
 
 @router.post("/register", response_model=AuthResponse, status_code=201)
-async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute;30/hour")
+async def register(
+    request: Request,
+    response: Response,
+    body: RegisterRequest,
+    db: AsyncSession = Depends(get_db),
+):
     result = await auth_service.register_user(
         db,
         full_name=body.full_name,
@@ -29,7 +37,13 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute;100/hour")
+async def login(
+    request: Request,
+    response: Response,
+    body: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+):
     tokens = await auth_service.login_user(body.email, body.password)
 
     user_info = await auth_service.get_user_with_org(db, tokens["supabase_user_id"])
@@ -42,7 +56,12 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/reset-password", status_code=200)
-async def reset_password(body: ResetPasswordRequest):
+@limiter.limit("3/minute;20/hour")
+async def reset_password(
+    request: Request,
+    response: Response,
+    body: ResetPasswordRequest,
+):
     await auth_service.request_password_reset(body.email)
     return {"message": "If that email exists, a reset link has been sent."}
 
