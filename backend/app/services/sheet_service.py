@@ -11,10 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.middleware.error_handler import AppException, NotFoundException
 from app.models.project import Project
 from app.models.sheet import Sheet
+from app.services.event_service import log_event
 from app.utils.scale_detect import compute_scale_from_calibration_line
 
 _MAX_SEARCH_LEN = 200
 _MAX_RESULTS = 80
+#: Hard cap matches the ``Sheet.sheet_name`` column (``VARCHAR(255)``).
+#: We trim slightly below that so any future client-side display affordance
+#: (e.g. ellipsis indicator) doesn't bump into the limit.
+_MAX_SHEET_NAME_LEN = 200
 
 
 def _escape_like(s: str) -> str:
@@ -71,6 +76,59 @@ async def update_sheet_scale(
     sheet.scale_label = detected.scale_label[:100]
     sheet.scale_source = "manual"
     await db.flush()
+    return sheet
+
+
+async def rename_sheet(
+    db: AsyncSession,
+    org_id: uuid.UUID,
+    sheet_id: uuid.UUID,
+    *,
+    sheet_name: str,
+    acting_user_id: uuid.UUID | None = None,
+) -> Sheet:
+    """Inline-rename a sheet and mark the name as user-edited.
+
+    Manually-edited names are protected from any future re-extraction
+    (Stage 1 + the manual title-block re-extract task both skip rows where
+    ``sheet_name_source = 'manual'``). This guard is what makes the inline
+    rename UI safe to ship: the user can fix wrong names and never see them
+    revert on a later AI run.
+
+    Whitespace is trimmed and a length cap is enforced. Empty strings (after
+    trim) are rejected with 422 so the UI can keep the original name.
+    """
+    name = (sheet_name or "").strip()
+    if not name:
+        raise AppException(
+            code="SHEET_NAME_EMPTY",
+            message="Sheet name cannot be empty.",
+            status_code=422,
+        )
+    if len(name) > _MAX_SHEET_NAME_LEN:
+        name = name[:_MAX_SHEET_NAME_LEN]
+
+    sheet = await get_sheet(db, org_id, sheet_id)
+    previous_name = sheet.sheet_name
+    previous_source = sheet.sheet_name_source
+    sheet.sheet_name = name
+    sheet.sheet_name_source = "manual"
+    await db.flush()
+
+    await log_event(
+        db,
+        org_id=org_id,
+        user_id=acting_user_id,
+        project_id=sheet.project_id,
+        event_type="sheet.renamed",
+        entity_type="sheet",
+        entity_id=sheet.id,
+        payload={
+            "previous_name": previous_name,
+            "previous_source": previous_source,
+            "new_name": name,
+        },
+    )
     return sheet
 
 

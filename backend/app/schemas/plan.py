@@ -53,6 +53,8 @@ class SheetResponse(BaseModel):
     project_id: uuid.UUID
     page_number: int
     sheet_name: str | None
+    #: ``'auto'`` (extracted) | ``'manual'`` (user rename) | ``None`` (legacy).
+    sheet_name_source: str | None = None
     scale_value: float | None
     scale_unit: str | None
     scale_label: str | None
@@ -73,6 +75,8 @@ class SheetListItemResponse(BaseModel):
     project_id: uuid.UUID
     page_number: int
     sheet_name: str | None
+    #: ``'auto'`` (extracted) | ``'manual'`` (user rename) | ``None`` (legacy).
+    sheet_name_source: str | None = None
     scale_value: float | None
     scale_unit: str | None
     scale_label: str | None
@@ -83,6 +87,12 @@ class SheetListItemResponse(BaseModel):
     thumbnail_url: str | None = None
     created_at: datetime
     vector_snap_segment_count: int = 0
+    #: AI-02 sheet classification. NULL until that pipeline run completes for the plan.
+    discipline: str | None = None
+    sheet_type: str | None = None
+    classification_confidence: float | None = None
+    #: ``'lexical' | 'vision' | 'manual'`` -- which path produced the result.
+    classification_method: str | None = None
 
     @classmethod
     def from_model(cls, s: "SheetModel", *, thumbnail_url: str | None = None) -> "SheetListItemResponse":
@@ -92,6 +102,7 @@ class SheetListItemResponse(BaseModel):
             project_id=s.project_id,
             page_number=s.page_number,
             sheet_name=s.sheet_name,
+            sheet_name_source=s.sheet_name_source,
             scale_value=s.scale_value,
             scale_unit=s.scale_unit,
             scale_label=s.scale_label,
@@ -101,6 +112,10 @@ class SheetListItemResponse(BaseModel):
             thumbnail_url=thumbnail_url,
             created_at=s.created_at,
             vector_snap_segment_count=s.vector_snap_segment_count,
+            discipline=getattr(s, "discipline", None),
+            sheet_type=getattr(s, "sheet_type", None),
+            classification_confidence=getattr(s, "classification_confidence", None),
+            classification_method=getattr(s, "classification_method", None),
         )
 
 
@@ -128,6 +143,17 @@ class PatchSheetScaleRequest(BaseModel):
     pdf_line_length_points: float = Field(gt=0)
     real_distance: float = Field(gt=0)
     real_unit: str = Field(min_length=1, max_length=20)
+
+
+class PatchSheetRequest(BaseModel):
+    """Inline rename: user types a new sheet name in the sheet index.
+
+    The endpoint server-side trims whitespace; an empty result is rejected
+    with 422. ``min_length=1`` here catches obvious clients but is not the
+    final guard.
+    """
+
+    sheet_name: str = Field(min_length=1, max_length=200)
 
 
 class SearchHit(BaseModel):

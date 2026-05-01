@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Text, BigInteger, Integer, DateTime, ForeignKey, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import String, Text, BigInteger, Integer, Float, DateTime, ForeignKey, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -43,6 +43,19 @@ class Plan(Base):
     uploaded_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
+    #: Title-block region in PDF user-space points (origin top-left, y down):
+    #: ``{"x0": float, "y0": float, "x1": float, "y1": float}``. Null until
+    #: AI-02b's manual-bbox flow lands. Reused across every sheet in the plan
+    #: because title-block geometry is constant per sheet set. Column kept
+    #: from migration 014 so AI-02b can drop straight in.
+    title_block_bbox: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    #: AI-02b: 1.0 when the user draws the bbox; reserved for a future
+    #: confidence score if auto-detection is ever revisited.
+    title_block_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: ``'manual'`` (user-drawn bbox) reserved values: ``'auto'`` /
+    #: ``'vision'`` for any future detection path. Currently always 'manual'
+    #: when set, NULL otherwise.
+    title_block_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

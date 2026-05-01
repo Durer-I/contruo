@@ -21,6 +21,17 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+#: Default DPI for clip rendering (used by Stage 1 OCR fallback). 144 = 2x the
+#: native PDF resolution (72 DPI) -- a sweet spot for Tesseract on title-block
+#: text without exploding memory on large clips. Increase to 200 for faint
+#: scans; the OCR layer caps at 300 to bound RAM.
+DEFAULT_CLIP_DPI = 144
+
+#: Default thumbnail max-dimension for sheet classification (Stage 2 vision
+#: fallback). 512px keeps the multimodal prompt under typical token budgets
+#: while preserving enough detail to recognize discipline + sheet type.
+DEFAULT_CLASSIFICATION_THUMB_MAX_DIM = 512
+
 #: AIA/common construction sheet-number patterns, e.g. "A1.01", "A-101", "M2.03", "S1.1",
 #: "E2.1a", "SD-101". Matched at the start of a trimmed line to reduce false positives.
 _SHEET_NUMBER_PATTERN = re.compile(
@@ -218,3 +229,156 @@ def extract_pdf(
         return PdfExtractResult(page_count=total, pages=pages, metadata=pdf_meta)
     finally:
         doc.close()
+
+
+# ─── AI-02 helpers: clip extraction + thumbnail rendering ──────────────────
+
+
+def _coerce_rect(rect_or_dict: Any) -> Any:
+    """Accept either a fitz.Rect or ``{"x0","y0","x1","y1"}`` dict."""
+    if fitz is None:
+        raise RuntimeError("PyMuPDF (fitz) is not installed")
+    if hasattr(rect_or_dict, "x0") and hasattr(rect_or_dict, "y0"):
+        return rect_or_dict
+    if isinstance(rect_or_dict, dict):
+        return fitz.Rect(
+            float(rect_or_dict["x0"]),
+            float(rect_or_dict["y0"]),
+            float(rect_or_dict["x1"]),
+            float(rect_or_dict["y1"]),
+        )
+    raise TypeError(f"Cannot coerce {type(rect_or_dict).__name__} to fitz.Rect")
+
+
+def extract_text_in_rect(page: Any, rect_pts: Any) -> str:
+    """Extract text from a single rect of a PDF page in PDF user-space points.
+
+    Used by Stage 1 (title-block extraction) to read the title cell without
+    pulling the entire page's text. Returns the empty string when the clip
+    contains no text layer (caller should escalate to OCR).
+
+    The cleanup matches the spec: collapse whitespace, strip line breaks.
+    Multiple blank lines between fields collapse to a single space so the
+    final ``sheet_name`` reads naturally ("A1.01 First Floor Plan", not
+    "A1.01\\n\\nFirst Floor Plan\\n\\n").
+    """
+    if fitz is None:
+        raise RuntimeError("PyMuPDF (fitz) is not installed")
+    rect = _coerce_rect(rect_pts)
+    try:
+        raw = page.get_text("text", clip=rect) or ""
+    except Exception:  # pragma: no cover -- fitz raises on malformed clips
+        logger.exception("get_text(clip=) failed")
+        return ""
+    return _normalize_title_text(raw)
+
+
+def _normalize_title_text(raw: str) -> str:
+    """Collapse runs of whitespace and trim. Used for both PyMuPDF and OCR text."""
+    if not raw:
+        return ""
+    # Collapse all whitespace (incl. newlines) to single spaces, then trim.
+    return re.sub(r"\s+", " ", raw).strip()
+
+
+def render_clip_to_png(
+    page: Any,
+    rect_pts: Any,
+    *,
+    dpi: int = DEFAULT_CLIP_DPI,
+) -> bytes:
+    """Render a sub-rectangle of a PDF page as a PNG.
+
+    Used by:
+      * Stage 1 OCR fallback (when ``extract_text_in_rect`` returns empty).
+      * Stage 2 vision-fallback if a future caller wants a region crop.
+
+    DPI defaults to 144 (2x the PDF's native 72 DPI) to give Tesseract enough
+    detail without ballooning the image. Memory bound: a typical title-block
+    clip at 144 DPI produces a ~600x300 PNG (<100 KB).
+    """
+    if fitz is None:
+        raise RuntimeError("PyMuPDF (fitz) is not installed")
+    rect = _coerce_rect(rect_pts)
+    # PyMuPDF default is 72 DPI; scale = dpi / 72.
+    scale = max(1.0, dpi / 72.0)
+    matrix = fitz.Matrix(scale, scale)
+    pix = page.get_pixmap(matrix=matrix, clip=rect, alpha=False)
+    img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+def render_thumbnail_for_classification(
+    page: Any,
+    *,
+    max_dim: int = DEFAULT_CLASSIFICATION_THUMB_MAX_DIM,
+) -> bytes:
+    """Render a downsampled thumbnail of the full page for vision classification.
+
+    Used by Stage 2 (sheet classification fallback). Targets ``max_dim`` on
+    the longer page edge so portrait and landscape sheets get similar token
+    cost in the multimodal prompt. PNG output keeps line drawings legible
+    (vs JPEG which would smear thin construction-drawing lines).
+
+    NOTE: callers should cache the bytes by sheet content hash via
+    ``ai_cache``; this function does not memoize.
+    """
+    if fitz is None:
+        raise RuntimeError("PyMuPDF (fitz) is not installed")
+    rect = page.rect
+    longer = max(rect.width, rect.height) or 1.0
+    scale = max(0.05, min(1.0, max_dim / longer))
+    matrix = fitz.Matrix(scale, scale)
+    pix = page.get_pixmap(matrix=matrix, alpha=False)
+    img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+def get_words_in_rect(page: Any, rect_pts: Any) -> list[tuple[float, float, float, float, str]]:
+    """Return word-level bboxes within a clip rect as (x0, y0, x1, y1, text) tuples.
+
+    Used by the title-block heuristic to cluster small text near page edges.
+    Returns an empty list when the page has no text layer.
+    """
+    if fitz is None:
+        raise RuntimeError("PyMuPDF (fitz) is not installed")
+    rect = _coerce_rect(rect_pts)
+    try:
+        words = page.get_text("words", clip=rect) or []
+    except Exception:  # pragma: no cover
+        logger.exception("get_text('words', clip=) failed")
+        return []
+    out: list[tuple[float, float, float, float, str]] = []
+    for w in words:
+        # PyMuPDF format: (x0, y0, x1, y1, text, block_no, line_no, word_no)
+        if len(w) < 5:
+            continue
+        try:
+            out.append((float(w[0]), float(w[1]), float(w[2]), float(w[3]), str(w[4])))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def get_all_words(page: Any) -> list[tuple[float, float, float, float, str]]:
+    """All word-level bboxes on a page. Same tuple shape as ``get_words_in_rect``."""
+    if fitz is None:
+        raise RuntimeError("PyMuPDF (fitz) is not installed")
+    try:
+        words = page.get_text("words") or []
+    except Exception:  # pragma: no cover
+        logger.exception("get_text('words') failed")
+        return []
+    out: list[tuple[float, float, float, float, str]] = []
+    for w in words:
+        if len(w) < 5:
+            continue
+        try:
+            out.append((float(w[0]), float(w[1]), float(w[2]), float(w[3]), str(w[4])))
+        except (TypeError, ValueError):
+            continue
+    return out

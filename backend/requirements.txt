@@ -31,6 +31,15 @@ PyMuPDF>=1.25.0
 pdfplumber>=0.11.0
 Pillow>=11.0.0
 
+# AI Auto-Takeoff (Sprint AI-02+)
+# Anthropic SDK for Claude vision + LLM calls (see app/services/ai_models.py).
+anthropic>=0.40.0
+# OpenAI SDK for embeddings (Sprint AI-04 onward; declared now so worker images
+# don't need a rebuild between sprints).
+openai>=1.55.0
+# OCR fallback for Stage 1 title-block extraction on scanned plans.
+pytesseract>=0.3.13
+
 # Utilities
 python-dotenv>=1.0.1
 

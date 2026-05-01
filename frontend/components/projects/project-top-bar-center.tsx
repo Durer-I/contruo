@@ -131,8 +131,8 @@ function ProjectTopBarCenterInner({
       {showPlanUploadBar && (
         <div
           className={cn(
-            "flex min-w-0 max-w-[min(100vw-12rem,28rem)] shrink-0 items-center gap-0.5 rounded-2xl border border-border bg-card/80 p-0.5",
-            "shadow-sm"
+            "flex min-w-0 max-w-[min(100vw-12rem,28rem)] shrink-0 items-center gap-0.5 rounded-3xl border border-border bg-card/80 p-0.5",
+            
           )}
         >
           {plans.length > 0 ? (

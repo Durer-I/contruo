@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends
 
 from app.api.v1 import (
+    ai_runs,
     assemblies,
     auth,
     billing,
     conditions,
     export_routes,
     health,
+    internal_ai,
     liveblocks,
     measurements,
     org,
@@ -34,5 +36,7 @@ protected.include_router(measurements.router, tags=["measurements"])
 protected.include_router(export_routes.router)
 protected.include_router(liveblocks.router)
 protected.include_router(billing.router, tags=["billing"])
+protected.include_router(ai_runs.router, tags=["ai-runs"])
+protected.include_router(internal_ai.router, tags=["internal-ai"])
 
 api_router.include_router(protected)

@@ -40,7 +40,7 @@ export function PlanUploadZone({ file, onFile, disabled = false }: PlanUploadZon
   return (
     <div className="flex flex-col gap-2">
       {file ? (
-        <div className="flex items-center justify-between rounded-md border border-border bg-surface-overlay p-3">
+        <div className="flex items-center justify-between rounded-md border border-border bg-surface-overlay p-3 ">
           <div className="flex items-center gap-2">
             <FileIcon className="h-4 w-4 text-muted-foreground" />
             <div className="flex flex-col">
@@ -58,7 +58,7 @@ export function PlanUploadZone({ file, onFile, disabled = false }: PlanUploadZon
             disabled={disabled}
             aria-label="Remove file"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4 " />
           </Button>
         </div>
       ) : (

@@ -34,6 +34,10 @@ class Sheet(Base):
     )
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
     sheet_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: ``'auto'`` (extracted at upload or by AI Stage 1) | ``'manual'`` (user
+    #: rename) | ``NULL`` (legacy; treated as ``'auto'``). Re-extract paths
+    #: skip rows where this is ``'manual'`` so user edits are never clobbered.
+    sheet_name_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     #: Real-world units (``scale_unit``) per PDF point — independent of zoom/canvas.
     scale_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     scale_unit: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -47,6 +51,19 @@ class Sheet(Base):
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Line segments from PDF vector paths for snap-to-geometry (JSON list of {x1,y1,x2,y2} in PDF points).
     vector_snap_segments: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    #: AI-02 sheet classification. NULL until that sprint runs against the sheet.
+    #: Allowed values mirror ``app.services.ai_sheet_classifier.ALL_DISCIPLINES``:
+    #: 'architectural' | 'structural' | 'mechanical' | 'plumbing' | 'electrical'
+    #: | 'fire_protection' | 'civil' | 'landscape' | 'telecom' | 'interiors'
+    #: | 'general' | 'equipment' | 'other'.
+    discipline: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    #: Mirrors ``app.services.ai_sheet_classifier.ALL_SHEET_TYPES``:
+    #: 'plan' | 'elevation' | 'section' | 'detail' | 'schedule' | 'legend'
+    #: | 'diagram' | 'cover' | 'index' | 'spec' | 'other'.
+    sheet_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    classification_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: 'lexical' | 'vision' | 'manual' -- which path produced the result.
+    classification_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -7,7 +7,12 @@ from app.dependencies import get_db
 from app.middleware.auth import AuthContext
 from app.services.permission_service import Permission, require_permission
 from app.services import plan_service, sheet_service
-from app.schemas.plan import PatchSheetScaleRequest, SheetResponse, SheetVectorSnapResponse
+from app.schemas.plan import (
+    PatchSheetRequest,
+    PatchSheetScaleRequest,
+    SheetResponse,
+    SheetVectorSnapResponse,
+)
 
 router = APIRouter(prefix="/sheets")
 
@@ -42,12 +47,41 @@ async def patch_sheet_scale(
         real_distance=body.real_distance,
         real_unit=body.real_unit,
     )
+    return _serialize_sheet(sheet)
+
+
+@router.patch("/{sheet_id}", response_model=SheetResponse)
+async def rename_sheet(
+    sheet_id: uuid.UUID,
+    body: PatchSheetRequest,
+    auth: AuthContext = Depends(require_permission(Permission.EDIT_MEASUREMENTS)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Inline-rename a sheet from the sheet index UI.
+
+    Sets ``sheet_name_source = 'manual'`` so the AI title-block re-extract
+    path never overwrites the user's edit. Empty / whitespace-only names
+    are rejected with 422.
+    """
+    sheet = await sheet_service.rename_sheet(
+        db,
+        auth.org_id,
+        sheet_id,
+        sheet_name=body.sheet_name,
+        acting_user_id=auth.user_id,
+    )
+    return _serialize_sheet(sheet)
+
+
+def _serialize_sheet(sheet) -> SheetResponse:
+    """Single conversion path so adding a new column updates every endpoint at once."""
     return SheetResponse(
         id=sheet.id,
         plan_id=sheet.plan_id,
         project_id=sheet.project_id,
         page_number=sheet.page_number,
         sheet_name=sheet.sheet_name,
+        sheet_name_source=getattr(sheet, "sheet_name_source", None),
         scale_value=sheet.scale_value,
         scale_unit=sheet.scale_unit,
         scale_label=sheet.scale_label,

@@ -14,6 +14,11 @@ from app.models.measurement import Measurement
 from app.models.subscription import Subscription
 from app.models.invoice import Invoice
 from app.models.billing_webhook_delivery import BillingWebhookDelivery
+from app.models.ai_run import AiRun
+from app.models.ai_layer_item import AiLayerItem
+from app.models.extracted_schedule import ExtractedSchedule
+from app.models.extracted_legend import ExtractedLegend
+from app.models.ai_stage_cache import AiStageCache
 
 __all__ = [
     "Base",
@@ -33,4 +38,9 @@ __all__ = [
     "Subscription",
     "Invoice",
     "BillingWebhookDelivery",
+    "AiRun",
+    "AiLayerItem",
+    "ExtractedSchedule",
+    "ExtractedLegend",
+    "AiStageCache",
 ]

@@ -52,12 +52,57 @@ export interface SheetThumbnailUrlsResponse {
   urls: Record<string, string | null>;
 }
 
+/**
+ * Discipline taxonomy mirrors `backend/app/services/ai_sheet_classifier.ALL_DISCIPLINES`.
+ * Keep this in sync; the sheet-index dot-color map is keyed by these values.
+ */
+export type SheetDiscipline =
+  | "architectural"
+  | "structural"
+  | "mechanical"
+  | "electrical"
+  | "plumbing"
+  | "civil"
+  | "landscape"
+  | "telecom"
+  | "fire_protection"
+  | "interiors"
+  | "general"
+  | "equipment"
+  | "other";
+
+/** Mirrors `backend/app/services/ai_sheet_classifier.ALL_SHEET_TYPES`. */
+export type SheetType =
+  | "plan"
+  | "elevation"
+  | "section"
+  | "detail"
+  | "schedule"
+  | "legend"
+  | "diagram"
+  | "cover"
+  | "index"
+  | "spec"
+  | "other";
+
+/** Which path produced the AI-02 classification for a sheet. */
+export type SheetClassificationMethod = "lexical" | "vision" | "manual";
+
+/** Where the current ``sheet_name`` came from. ``null`` is treated as ``'auto'``
+ * by writers so legacy rows are eligible to be overwritten on a future
+ * re-extract (AI-02b's title-block flow will reintroduce the auto writer).
+ * ``'manual'`` means a user typed it inline -- never overwritten by
+ * extraction. */
+export type SheetNameSource = "auto" | "manual";
+
 export interface SheetInfo {
   id: string;
   plan_id: string;
   project_id: string;
   page_number: number;
   sheet_name: string | null;
+  /** AI-02b: which path produced the current sheet name. */
+  sheet_name_source?: SheetNameSource | null;
   scale_value: number | null;
   scale_unit: string | null;
   scale_label: string | null;
@@ -71,6 +116,11 @@ export interface SheetInfo {
   vector_snap_segment_count: number;
   /** Populated after `GET /api/v1/sheets/{id}/vector-snap` (or PATCH scale response). */
   vector_snap_segments?: VectorSnapSegment[] | null;
+  /** AI-02 sheet classification. NULL until the AI run completes Stage 2 for the plan. */
+  discipline?: SheetDiscipline | null;
+  sheet_type?: SheetType | null;
+  classification_confidence?: number | null;
+  classification_method?: SheetClassificationMethod | null;
 }
 
 export interface SearchHit {

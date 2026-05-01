@@ -33,6 +33,24 @@ class Condition(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    #: 'user' (default) | 'template_clone' | 'ai_created' | 'imported'.
+    #: Drives the "This condition was created by AI. Save to your team library?"
+    #: nudge in the AI-04 condition resolver.
+    source: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="user", default="user"
+    )
+    #: When ``source = 'template_clone'``, the org template the resolver cloned.
+    source_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("condition_templates.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    #: When ``source = 'ai_created'``, the run that created this condition.
+    source_ai_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ai_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

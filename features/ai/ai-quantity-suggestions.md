@@ -144,9 +144,12 @@ The user can convert any AI-suggested item to a fully owned item by editing it; 
 
 Contruo's edge: AI Quantity Suggestions is the only system in the market that **clones from the firm's template library with full assembly inheritance**. Templates are how estimating firms encode their pricing knowledge; honoring them is what turns AI takeoff from a toy into a power tool.
 
+## Decisions Locked
+
+- **Embedding provider for condition matching:** **OpenAI `text-embedding-3-small`** (1536-dim). Configured via `AI_EMBEDDING_PROVIDER` + `AI_EMBEDDING_MODEL` (see [AI Auto-Takeoff](ai-auto-takeoff.md) -> Technical Considerations). Cheap, fast, and accuracy is more than sufficient because matching is also keyed on `measurement_type` and `unit`. Wrapped behind an `EmbeddingModel` interface in `backend/app/services/ai_models.py` so the provider is a config swap.
+
 ## Open Questions
 
-- [ ] What's the right embedding model for condition-name matching? Local (sentence-transformers, no extra cost) vs hosted (slightly higher quality, per-call cost)?
 - [ ] How aggressive should the "Save to your team library?" nudge be -- shown once on first view, or persistent until dismissed?
 - [ ] Should there be a manual override mode where the user can pre-assign all AI detections to a specific condition for one run (useful for bulk condition reassignment)?
 - [ ] When a schedule's quantity column disagrees with the AI's plan-derived count, which one wins by default?
@@ -156,7 +159,7 @@ Contruo's edge: AI Quantity Suggestions is the only system in the market that **
 
 ## Technical Considerations
 
-- **Embedding cache.** Per-org embeddings for all conditions and templates, computed on create/update and cached in Postgres or a vector column. Resolver lookups become a fast vector similarity query, not a per-call API hit.
+- **Embedding cache.** Per-org embeddings for all conditions and templates, computed on create/update via the `EmbeddingModel` interface (default: OpenAI `text-embedding-3-small`) and cached in Postgres (`pgvector` column or JSONB blob). Resolver lookups become a fast vector similarity query, not a per-call API hit. New conditions and templates trigger a single embedding call; subsequent matches are local.
 - **Template assembly cloning.** When cloning a template, the assembly items live as JSONB on the template -- the resolver expands them into project-scoped `AssemblyItem` rows in a single transaction so the new condition is fully usable immediately.
 - **Resolver as a pure function.** The resolver takes `(detected_element_metadata, project_conditions, org_templates, project_units)` and returns `(condition_id, source, suggested_items)`. This makes it testable in isolation and reusable outside of AI Auto-Takeoff (e.g., for manual condition creation suggestions in the future).
 - **Schedule -> condition cardinality.** A single schedule row often produces a single condition (e.g., "Door Type A" -> "6'-0" Single Door"). When schedules group multiple variations under one row, the resolver creates one condition with `properties` capturing the variations.

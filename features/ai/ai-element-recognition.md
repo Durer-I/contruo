@@ -153,9 +153,13 @@ flowchart TD
 
 Contruo's edge: a **hybrid recognition stack** that combines deterministic vector analysis (cheap, fast, accurate where the data supports it) with model-based fallbacks for the harder cases, instead of pushing every page through a vision model. This keeps cost and latency in check while extending coverage to MEP and structural disciplines that pure-vision tools struggle with.
 
+## Decisions Locked
+
+- **Vision-model fallback provider:** **Anthropic Claude Sonnet (current generation)** as default for vision reasoning fallbacks (e.g., ambiguous symbol regions, lineless schedules). Configured via `AI_VISION_PROVIDER` + `AI_VISION_MODEL` (see [AI Auto-Takeoff](ai-auto-takeoff.md) -> Technical Considerations). Wrapped behind a `VisionModel` interface so the provider is a config swap, not a code change.
+- **Segmentation models for raster fallbacks:** Self-hosted SAM2 (or equivalent) for general segmentation. Vendor vision models are reserved for *interpretation* tasks, not pixel-level segmentation, where self-hosted is dramatically faster and cheaper at the per-page volumes we expect.
+
 ## Open Questions
 
-- [ ] Which vision model is the right default for raster fallbacks -- a hosted vendor (GPT-4o, Claude Sonnet) or a self-hosted model (SAM2, Florence-2)?
 - [ ] Where should the line be drawn between "vector recognition coverage adequate" and "augment with raster"? Per element type or per sheet?
 - [ ] How do we handle plans with mixed clean vector and embedded raster (e.g., scanned title block, vector drawing area)?
 - [ ] Should custom symbol training (per-project) be a v1 capability or deferred?
@@ -169,7 +173,7 @@ Contruo's edge: a **hybrid recognition stack** that combines deterministic vecto
 - **Coordinate hygiene.** Every geometry primitive is tagged with its coordinate system (`pdf_pts`) at construction. No mixed-unit math.
 - **Adaptive DPI.** Rasterize at the lowest DPI that preserves the smallest feature of interest (typically 200 DPI for symbols, 300 DPI for fine hatch). Bounded by a per-sheet max.
 - **Memory management.** Process pages one at a time in Celery tasks. Page rasters are released between stages.
-- **Model abstraction.** A thin `RecognitionModel` interface so vision models (vendor or self-hosted) are swappable per element type without changing the pipeline.
+- **Model abstraction.** A thin `RecognitionModel` interface in `backend/app/services/ai_models.py` so vision models (vendor or self-hosted) are swappable per element type without changing the pipeline. Default vendor: Anthropic Claude Sonnet (current generation). Default self-hosted segmentation: SAM2 or equivalent.
 - **Reproducibility.** Each run records `model_version` and the `template_hash` set used, so a re-run on the same inputs is bit-identical (within model determinism).
 - **No global Tesseract path.** Replace the hardcoded `pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"` from the prototype with an env var fallback so it works in a Linux Celery worker.
 

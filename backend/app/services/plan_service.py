@@ -35,6 +35,8 @@ class SheetSummary:
     project_id: uuid.UUID
     page_number: int
     sheet_name: str | None
+    #: ``'auto'`` | ``'manual'`` | ``None`` -- see ``Sheet.sheet_name_source``.
+    sheet_name_source: str | None
     scale_value: float | None
     scale_unit: str | None
     scale_label: str | None
@@ -44,6 +46,11 @@ class SheetSummary:
     thumbnail_path: str | None
     created_at: datetime
     vector_snap_segment_count: int
+    #: AI-02 sheet classification (NULL until the run completes Stage 2).
+    discipline: str | None = None
+    sheet_type: str | None = None
+    classification_confidence: float | None = None
+    classification_method: str | None = None
 
 
 #: Hard ceiling for uploaded plan PDFs. 200 MB accommodates large architectural sets.
@@ -185,6 +192,7 @@ async def list_project_sheets(
             Sheet.project_id,
             Sheet.page_number,
             Sheet.sheet_name,
+            Sheet.sheet_name_source,
             Sheet.scale_value,
             Sheet.scale_unit,
             Sheet.scale_label,
@@ -193,6 +201,10 @@ async def list_project_sheets(
             Sheet.height_px,
             Sheet.thumbnail_path,
             Sheet.created_at,
+            Sheet.discipline,
+            Sheet.sheet_type,
+            Sheet.classification_confidence,
+            Sheet.classification_method,
             segment_count_expr,
         )
         .where(Sheet.org_id == org_id, Sheet.project_id == project_id)
@@ -206,6 +218,7 @@ async def list_project_sheets(
             project_id=row.project_id,
             page_number=row.page_number,
             sheet_name=row.sheet_name,
+            sheet_name_source=row.sheet_name_source,
             scale_value=row.scale_value,
             scale_unit=row.scale_unit,
             scale_label=row.scale_label,
@@ -215,6 +228,10 @@ async def list_project_sheets(
             thumbnail_path=row.thumbnail_path,
             created_at=row.created_at,
             vector_snap_segment_count=int(row.segment_count or 0),
+            discipline=row.discipline,
+            sheet_type=row.sheet_type,
+            classification_confidence=row.classification_confidence,
+            classification_method=row.classification_method,
         )
         for row in result.all()
     ]

@@ -55,6 +55,46 @@ class Settings(BaseSettings):
     #: Development also auto-confirms unless you set ENVIRONMENT=production without this flag.
     auth_auto_confirm_registered_users: bool = False
 
+    # AI Auto-Takeoff (Sprint AI-01) — providers wrapped behind app.services.ai_models
+    # so swapping models is a config change, not a code change.
+    ai_vision_provider: str = "anthropic"
+    ai_vision_model: str = "claude-sonnet-4-5"
+    ai_embedding_provider: str = "openai"
+    ai_embedding_model: str = "text-embedding-3-small"
+    ai_llm_provider: str = "anthropic"
+    ai_llm_model: str = "claude-sonnet-4-5"
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    #: Daily per-org spend cap for the abuse circuit breaker. Default is
+    #: deliberately high (~100x typical run cost) -- this is *abuse* protection,
+    #: not a per-user limit. Customer-facing usage caps do not exist; AI is
+    #: included in the subscription.
+    ai_daily_cost_circuit_breaker_cents_per_org: int = 5000
+
+    # AI Auto-Takeoff (Sprint AI-02) — Stage 1 (title block) + Stage 2
+    # (sheet classification) tunables. Heuristics-first: a vision/LLM call
+    # only happens when the deterministic pass falls below the threshold.
+    #: Path to the ``tesseract`` binary for the OCR fallback in Stage 1. Empty
+    #: means resolve via PATH (Linux Celery workers); set explicitly on Windows
+    #: dev boxes (e.g. ``C:\\Program Files\\Tesseract-OCR\\tesseract.exe``).
+    #: When tesseract is missing the OCR call returns "" and the pipeline
+    #: gracefully degrades to "no title for this sheet".
+    ai_tesseract_cmd: str = ""
+    #: Below this confidence the lexical sheet classifier escalates to the
+    #: vision model (Stage 2). The "uninteresting sheet" skip-list (cover,
+    #: index, spec) bypasses the escalation even when below threshold so we
+    #: never pay for vision on a clearly-non-plan sheet.
+    ai_classification_confidence_threshold: float = 0.7
+    #: Number of sheet thumbnails packed into a single multimodal vision
+    #: classification call. 6 is a balance between prompt clarity and
+    #: per-call cost; raise cautiously -- the schema gets messy past ~10.
+    ai_vision_classify_batch_size: int = 6
+    #: Anthropic Claude Sonnet pricing (cents per 1k tokens). Config-driven so
+    #: pricing changes don't require a deploy. Defaults match the published
+    #: Sonnet 4.5 rates as of 2026-04 ($3/Mtok input, $15/Mtok output).
+    ai_anthropic_vision_input_per_1k_cents: float = 0.3
+    ai_anthropic_vision_output_per_1k_cents: float = 1.5
+
     @property
     def is_development(self) -> bool:
         return self.environment == "development"

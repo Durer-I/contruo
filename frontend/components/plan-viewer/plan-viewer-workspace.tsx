@@ -12,8 +12,6 @@ import {
   AlertTriangle,
   CopyMinus,
   CopyPlus,
-  LayoutGrid,
-  List,
   Loader2,
   Maximize2,
   Minus,
@@ -72,6 +70,12 @@ import {
 } from "@/components/plan-viewer/plan-pdf-canvas";
 import { viewportStorageKey } from "@/components/plan-viewer/sheet-viewport-storage";
 import { TakeoffToolbar, type TakeoffTool } from "@/components/plan-viewer/takeoff-toolbar";
+import { RunAutoTakeoffButton } from "@/components/plan-viewer/run-auto-takeoff-button";
+import {
+  SheetIndex,
+  type SheetStripMode,
+} from "@/components/plan-viewer/sheet-index";
+import { useActiveAiRun, type AiRunStatusBroadcast } from "@/lib/ai-runs";
 import { ScaleCalibrationDialog } from "@/components/plan-viewer/scale-calibration-dialog";
 import { ScaleIntroDialog } from "@/components/plan-viewer/scale-intro-dialog";
 import { PlanSearchPanel } from "@/components/plan-viewer/plan-search-panel";
@@ -125,8 +129,6 @@ const PANEL_IDS = ["sheet-index", "viewer", "quantities"] as const;
 
 type ScaleFlowStep = "idle" | "intro" | "picking" | "input";
 
-type SheetStripMode = "list" | "thumbs";
-
 const MEASUREMENTS_RESYNC_MS = 350;
 
 function mergeMeasurementRow(prev: MeasurementInfo[], row: MeasurementInfo): MeasurementInfo[] {
@@ -155,7 +157,6 @@ export function PlanViewerWorkspace({
   canExport = false,
 }: PlanViewerWorkspaceProps) {
   const canvasRef = useRef<PlanPdfCanvasHandle>(null);
-  const sheetStripScrollRef = useRef<HTMLDivElement>(null);
   const skipSheetResetOnPlanChangeRef = useRef(false);
   const { setTakeoffSlot } = useTakeoffToolbarSlot();
   const {
@@ -279,21 +280,6 @@ export function PlanViewerWorkspace({
   const [sheetThumbUrls, setSheetThumbUrls] = useState<Record<string, string | null>>({});
   const [sheetThumbsLoading, setSheetThumbsLoading] = useState(false);
   const sheetThumbsLoadedForKeyRef = useRef<string>("");
-
-  /** Keep the active sheet visible when it changes (e.g. quantities “navigate to” another page). */
-  useEffect(() => {
-    if (!activeSheetId || planSheets.length === 0) return;
-    const root = sheetStripScrollRef.current;
-    if (!root) return;
-    const row = root.querySelector<HTMLElement>(
-      `[data-sheet-strip-item="${CSS.escape(activeSheetId)}"]`
-    );
-    if (!row) return;
-    const id = requestAnimationFrame(() => {
-      row.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    });
-    return () => cancelAnimationFrame(id);
-  }, [activeSheetId, planSheetsIdKey, planSheets.length, sheetStripMode]);
 
   useEffect(() => {
     setSheetThumbUrls({});
@@ -497,6 +483,30 @@ export function PlanViewerWorkspace({
   const activeSheetIdRef = useRef(activeSheetId);
   activeSheetIdRef.current = activeSheetId;
 
+  // ── AI Auto-Takeoff (Sprint AI-01) ────────────────────────────────────
+  // Polled run state + a transient broadcast slot so the status pill can show
+  // the active stage between polls.
+  const { run: activeAiRun, refresh: refreshAiRun } = useActiveAiRun(
+    projectId,
+    activePlanId
+  );
+  const [aiBroadcast, setAiBroadcast] = useState<AiRunStatusBroadcast | null>(null);
+  const refreshAiRunRef = useRef(refreshAiRun);
+  useEffect(() => {
+    refreshAiRunRef.current = refreshAiRun;
+  }, [refreshAiRun]);
+  const activePlan = useMemo(
+    () => plans.find((p) => p.id === activePlanId) ?? null,
+    [plans, activePlanId]
+  );
+  const aiButtonDisabledReason = useMemo<string | null>(() => {
+    if (!activePlanId) return "Select a plan first";
+    if (activePlan && activePlan.status !== "ready") {
+      return "Plan is still processing";
+    }
+    return null;
+  }, [activePlan, activePlanId]);
+
   const bumpMeasurementsRemote = useCallback(
     (payload?: { measurementIds?: string[]; deletedIds?: string[] }) => {
       const sid = activeSheetIdRef.current;
@@ -530,7 +540,9 @@ export function PlanViewerWorkspace({
 
   useEventListener(({ event }) => {
     if (!event || typeof event !== "object") return;
-    const ev = event as CollaborationBroadcastEvent;
+    const ev = event as
+      | CollaborationBroadcastEvent
+      | { type: "ai_run.status_changed"; data: AiRunStatusBroadcast };
     if (ev.type === "contruo.measurements_changed") {
       // Debounce so bursts of edits from collaborators collapse to one refetch.
       scheduleMeasurementsResyncRef.current();
@@ -538,6 +550,18 @@ export function PlanViewerWorkspace({
     if (ev.type === "contruo.conditions_changed") {
       void loadConditionsRef.current();
       scheduleMeasurementsResyncRef.current();
+    }
+    if (ev.type === "ai_run.status_changed" && ev.data) {
+      setAiBroadcast(ev.data);
+      // Backstop: when the run terminates, force a poll so the cost / summary
+      // numbers reflect the final state without waiting for the next interval.
+      if (
+        ev.data.status === "completed" ||
+        ev.data.status === "failed" ||
+        ev.data.status === "cancelled"
+      ) {
+        void refreshAiRunRef.current();
+      }
     }
   });
 
@@ -1578,18 +1602,29 @@ export function PlanViewerWorkspace({
 
   useEffect(() => {
     setTakeoffSlot(
-      <TakeoffToolbar
-        active={activeTool}
-        onChange={setActiveTool}
-        onSearchClick={() => setSearchPanelOpen(true)}
-        canCalibrateScale={canEditMeasurements}
-        conditions={conditions}
-        activeConditionId={activeConditionId}
-        onConditionChange={(id) => setActiveConditionId(id)}
-        conditionPickerDisabled={conditionsLoading || conditions.length === 0}
-        canExport={canExport}
-        onExportClick={() => setExportDialogOpen(true)}
-      />
+      <div className="flex max-w-full min-w-0 items-center gap-2">
+        <RunAutoTakeoffButton
+          projectId={projectId}
+          planId={activePlanId}
+          run={activeAiRun}
+          refresh={refreshAiRun}
+          liveBroadcast={aiBroadcast}
+          visible={canEditMeasurements}
+          disabledReason={aiButtonDisabledReason}
+        />
+        <TakeoffToolbar
+          active={activeTool}
+          onChange={setActiveTool}
+          onSearchClick={() => setSearchPanelOpen(true)}
+          canCalibrateScale={canEditMeasurements}
+          conditions={conditions}
+          activeConditionId={activeConditionId}
+          onConditionChange={(id) => setActiveConditionId(id)}
+          conditionPickerDisabled={conditionsLoading || conditions.length === 0}
+          canExport={canExport}
+          onExportClick={() => setExportDialogOpen(true)}
+        />
+      </div>
     );
     return () => setTakeoffSlot(null);
   }, [
@@ -1600,6 +1635,12 @@ export function PlanViewerWorkspace({
     activeConditionId,
     conditionsLoading,
     canExport,
+    projectId,
+    activePlanId,
+    activeAiRun,
+    refreshAiRun,
+    aiBroadcast,
+    aiButtonDisabledReason,
   ]);
 
   useEffect(() => {
@@ -2036,120 +2077,28 @@ export function PlanViewerWorkspace({
           maxSize="100%"
           className="flex min-h-0 min-w-0 flex-col border-r border-border bg-surface"
         >
-          <div className="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Sheets ({planSheets.length})
-            </span>
-            <div className="flex shrink-0 items-center gap-0.5">
-              {sheetThumbsLoading ? (
-                <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-hidden />
-              ) : null}
-              <div
-                className="flex rounded-md border border-border bg-background p-0.5"
-                role="group"
-                aria-label="Sheet list layout"
-              >
-                <Button
-                  type="button"
-                  variant={sheetStripMode === "list" ? "secondary" : "ghost"}
-                  size="sm"
-                  className="h-7 gap-1 px-2 text-[10px]"
-                  onClick={() => setSheetStripMode("list")}
-                  aria-pressed={sheetStripMode === "list"}
-                >
-                  <List className="size-3.5 shrink-0" aria-hidden />
-                  List
-                </Button>
-                <Button
-                  type="button"
-                  variant={sheetStripMode === "thumbs" ? "secondary" : "ghost"}
-                  size="sm"
-                  className="h-7 gap-1 px-2 text-[10px]"
-                  onClick={() => setSheetStripMode("thumbs")}
-                  aria-pressed={sheetStripMode === "thumbs"}
-                >
-                  <LayoutGrid className="size-3.5 shrink-0" aria-hidden />
-                  Thumbs
-                </Button>
-              </div>
-            </div>
-          </div>
-          <div ref={sheetStripScrollRef} className="min-h-0 flex-1 overflow-auto p-2">
-            {planSheets.length === 0 ? (
-              <p className="p-2 text-xs text-muted-foreground">
-                {plans.some((p) => p.id === activePlanId)
-                  ? "No sheets for this plan yet. It may still be processing — switch plan in the top bar if needed."
-                  : "No sheets yet. Add a plan from the top bar (upload icon)."}
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {planSheets.map((sheet) => {
-                  const isActive = sheet.id === activeSheetId;
-                  const scaleOk = sheet.scale_value != null;
-                  const thumbSrc =
-                    sheet.thumbnail_url ?? sheetThumbUrls[sheet.id] ?? null;
-                  const scaleLine = `${scaleOk
-                    ? sheet.scale_label ??
-                      `${sheet.scale_value?.toPrecision(3)} ${sheet.scale_unit}/pt`
-                    : "Not calibrated"}${sheet.scale_source === "auto" ? " · Auto" : ""}`;
-                  const title = sheet.sheet_name ?? `Page ${sheet.page_number}`;
-                  return (
-                    <li key={sheet.id} data-sheet-strip-item={sheet.id}>
-                      <button
-                        type="button"
-                        onClick={() => setUserSheetId(sheet.id)}
-                        className={cn(
-                          "flex w-full rounded-md border p-2 text-left transition-colors",
-                          sheetStripMode === "list"
-                            ? "flex-row items-center gap-2"
-                            : "flex-col items-start gap-1",
-                          isActive
-                            ? "border-primary bg-primary/5 ring-1 ring-primary/30"
-                            : "border-transparent bg-card hover:border-primary/40 hover:bg-surface-overlay"
-                        )}
-                      >
-                        {sheetStripMode === "thumbs" ? (
-                          thumbSrc ? (
-                            // eslint-disable-next-line @next/next/no-img-element -- signed remote URL
-                            <img
-                              src={thumbSrc}
-                              alt=""
-                              className="aspect-[4/3] w-full rounded-sm border border-border object-cover"
-                              loading={isActive ? "eager" : "lazy"}
-                              fetchPriority={isActive ? "high" : "low"}
-                            />
-                          ) : (
-                            <div className="flex aspect-[4/3] w-full items-center justify-center rounded-sm border border-border bg-background text-[10px] text-muted-foreground">
-                              {sheetThumbsLoading ? (
-                                <Loader2 className="size-5 animate-spin opacity-60" aria-hidden />
-                              ) : (
-                                sheet.page_number
-                              )}
-                            </div>
-                          )
-                        ) : (
-                          <div className="flex h-10 w-8 shrink-0 items-center justify-center rounded-sm border border-border bg-background text-xs font-medium text-muted-foreground">
-                            {sheet.page_number}
-                          </div>
-                        )}
-                        <div
-                          className={cn(
-                            "min-w-0",
-                            sheetStripMode === "list" ? "flex flex-1 flex-col gap-0.5" : "w-full"
-                          )}
-                        >
-                          <span className="line-clamp-2 w-full text-[11px] font-medium leading-tight">
-                            {title}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">{scaleLine}</span>
-                        </div>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+          <SheetIndex
+            planSheets={planSheets}
+            activeSheetId={activeSheetId}
+            onSheetSelect={setUserSheetId}
+            sheetThumbUrls={sheetThumbUrls}
+            sheetThumbsLoading={sheetThumbsLoading}
+            sheetStripMode={sheetStripMode}
+            onSheetStripModeChange={setSheetStripMode}
+            emptyStateMessage={
+              plans.some((p) => p.id === activePlanId)
+                ? "No sheets for this plan yet. It may still be processing — switch plan in the top bar if needed."
+                : "No sheets yet. Add a plan from the top bar (upload icon)."
+            }
+            canEditMeasurements={canEditMeasurements}
+            onSheetRenamed={() => {
+              // Refetch the canonical sheet list so other consumers (top bar
+              // sheet picker, search, classification badges) all see the new
+              // name + sheet_name_source. The optimistic UI update inside
+              // sheet-index.tsx keeps the row from flashing.
+              void onSheetsRefresh();
+            }}
+          />
         </Panel>
 
         <Separator

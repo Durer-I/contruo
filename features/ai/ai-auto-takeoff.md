@@ -49,14 +49,14 @@ flowchart TD
 - **Auto-detect first.** Scan three randomly sampled sheets for the densest cluster of small structured text within 25% of any page edge (typical title-block location). Pick the most consistent bbox across samples. No user interaction unless detection confidence < 0.7.
 - **Manual fallback only when needed.** If auto-detection is uncertain, the upload flow shows the detected box on a representative sheet and asks "Is this your title block?" with drag-to-correct. The corrected bbox is saved per `plan_id` and reused for every sheet.
 - **Hybrid text extraction.** Try PyMuPDF `get_text("text", clip=rect)` first; fall back to Tesseract OCR at 2x DPI when no text is recovered.
-- **Cleanup.** Strip line breaks, collapse whitespace, write per-sheet titles to `plan_sheets.title`.
+- **Cleanup.** Strip line breaks, collapse whitespace, write per-sheet titles to `sheets.title`.
 
 ### Stage 2: Sheet Classification
 
 - **Lexical pass.** Match sheet number prefix (`A-`, `S-`, `M-`, `P-`, `E-`, `FP-`) and title keywords (`schedule`, `legend`, `floor plan`, `RCP`, `power plan`, `key plan`, etc.) to assign `discipline` (architectural, structural, mechanical, plumbing, electrical, fire-protection, civil) and `sheet_type` (cover, index, plan, schedule, legend, detail, spec, elevation, section).
 - **Vision fallback.** When lexical confidence < 0.7, send the sheet thumbnail to a vision LLM with a fixed schema for `{discipline, sheet_type, confidence}`. Cache by sheet content hash so a 200-page set hits the model only on ambiguous pages.
 - **Routing.** Schedule and legend sheets route to Stage 3a. Plan sheets route to Stage 3b. Index, cover, and spec sheets are skipped (still classified, just not measured).
-- **Output.** New columns on `plan_sheets`: `discipline`, `sheet_type`, `classification_confidence`, `classification_method` (`lexical` | `vision`).
+- **Output.** New columns on `sheets`: `discipline`, `sheet_type`, `classification_confidence`, `classification_method` (`lexical` | `vision`).
 
 ### Stage 3a: Schedule and Legend Extraction
 
@@ -206,16 +206,18 @@ This enables:
 
 ### Cost and Throttling
 
-- Every Celery task records `cost_cents` and `tokens_used` to the parent `ai_runs` row.
-- Per-org monthly cost ceiling configurable in org settings (default: TBD per pricing model).
-- Runs auto-pause at the cap and surface a banner; org admins can raise the cap or wait until the next billing cycle.
-- Per-stage caching by content hash means re-running on the same plan set is effectively free for unchanged sheets.
+- AI usage is **fully included in the Contruo subscription**. There is no user-facing cost meter, no per-org cap, and no "you've hit your AI limit" banner. Customers buy seats and AI Auto-Takeoff is part of what they get.
+- We still track cost **internally**: every Celery task records `cost_cents` and `tokens_used` to the parent `ai_runs` row. This is used for product analytics, pricing-model validation, and abuse detection -- not exposed to customers.
+- **Abuse circuit breaker.** If a single org's AI cost in a 24-hour window exceeds a configurable threshold (e.g., 100x typical usage), a system-level pause kicks in and an internal alert fires. This protects against runaway loops, malicious uploads, or pricing surprises -- not against legitimate heavy use.
+- **Per-stage caching by content hash** means re-running on the same plan set is effectively free for unchanged sheets, which keeps the average per-org cost predictable.
+- **Heuristics-first discipline at every stage** (the single biggest cost lever) ensures vision/LLM calls scale with sheet complexity, not sheet count.
 
 ## Nice-to-Have
 
 - **Review Queue mode** -- a Gmail-style linear walkthrough that pans/zooms to each pending item and shows `Accept | Reject | Edit | Skip`. Deferred until the rest of the AI Auto-Takeoff flow is shipped and stable.
 - **Confidence calibration UI** -- per-condition threshold tuner with a histogram of past detection confidences.
 - **Sheet-set diff** -- when a revised plan set is uploaded, AI compares vs the previous run and surfaces only the deltas (precursor to AI Plan Comparison).
+- **Auto-run on plan revision** -- when a new revision is uploaded, automatically trigger AI Auto-Takeoff against the previous run's settings instead of requiring a manual click. Pairs naturally with sheet-set diff.
 - **Active-learning loop** -- store every accept/reject decision tied to the geometry that was suggested. Feed into model fine-tuning over time.
 - **Per-discipline run priority** -- estimators specializing in a trade can prioritize MEP sheets or Architectural sheets first.
 - **AI explainability popover** -- "Why did the AI suggest this?" -> "Matched legend swatch 'CARPET-01' with 0.87 confidence at this location."
@@ -232,15 +234,21 @@ This enables:
 
 Contruo's edge: AI Auto-Takeoff produces measurements that **inherit your firm's conditions and assemblies**, runs **across all disciplines** (not just architectural), and lives inside a **real-time collaborative** plan viewer. Combined with the AI Layer review pattern, it is the first auto-takeoff that an estimating manager can trust enough to deploy to a junior estimator.
 
+## Decisions Locked
+
+- **AI cost model:** included in the Contruo subscription. No user-facing meter or cap. Internal tracking + abuse circuit breaker only.
+- **Plan-revision auto-trigger:** **manual for v1.** When a plan revision is uploaded, the user explicitly clicks "Run Auto-Takeoff" again. Automatic re-trigger on revision is a Nice-to-Have for a later release.
+- **Default vision provider:** **Anthropic Claude Sonnet** (current generation) for high-quality reasoning stages (sheet classification fallback, lineless schedule extraction, condition naming summarization). Optional fast-tier model (e.g., Gemini Flash) reserved for high-volume simple checks. All wrapped behind a `VisionModel` interface in `backend/app/services/ai_models.py` so the provider is a config swap, not a code change.
+- **Default embedding provider:** **OpenAI `text-embedding-3-small`** for condition-name matching in the resolver. 1536-dim, cheap, fast, more than sufficient because matching is also keyed on `measurement_type` and `unit`.
+
 ## Open Questions
 
-- [ ] What is the default per-org monthly AI cost ceiling? Tied to subscription pricing decisions.
 - [ ] Should low-confidence items still write to `ai_layer_items` (counted but hidden) or be discarded entirely below a hard floor (e.g., < 0.3)?
-- [ ] What is the policy when the user uploads a plan revision -- run AI Auto-Takeoff automatically on the new version, or require manual trigger?
 - [ ] How do we handle multi-page schedules (e.g., Door Schedule continued across 3 sheets)? Stitch first, then extract?
 - [ ] Should the org be able to designate "blessed" `ConditionTemplates` (hand-curated, AI-preferred) vs auto-saved templates?
 - [ ] Does the AI Layer count toward seat-based collaboration limits? (Probably no -- it is a system-generated state.)
 - [ ] How should AI handle sheet-set hierarchies where a single PDF contains multiple plan stamps (e.g., key plan + enlarged plan on the same sheet)?
+- [ ] What is the right default for the abuse circuit-breaker threshold (multiple of median per-org daily AI cost)?
 
 ## Technical Considerations
 
@@ -248,11 +256,12 @@ Contruo's edge: AI Auto-Takeoff produces measurements that **inherit your firm's
 - **PostgreSQL changes:**
     - New tables: `ai_runs`, `ai_layer_items`, `extracted_schedules`, `extracted_legends`.
     - New columns on `measurements`: `source`, `ai_run_id`.
-    - New columns on `plan_sheets`: `discipline`, `sheet_type`, `classification_confidence`, `classification_method`.
+    - New columns on `sheets`: `discipline`, `sheet_type`, `classification_confidence`, `classification_method`.
     - `org_id` on every new table for RLS multi-tenancy (matches existing pattern).
 - **Coordinate system.** All AI geometry stored in PDF user space points so existing `measurement_quantity.py` math works without translation.
 - **Rasterization.** Standardize on PyMuPDF `page.get_pixmap()` for both rendering and back-mapping to keep the conversion math consistent. Adaptive DPI (target 200, max 300) to bound memory.
-- **Vision model selection.** Configurable in `backend/app/config.py` -- single `AI_VISION_MODEL` env var rather than hardcoded model names per script. Default to a current GPT-4o-class vision model.
+- **Vision model selection.** Configurable in `backend/app/config.py` via `AI_VISION_PROVIDER` + `AI_VISION_MODEL` env vars rather than hardcoded model names per script. Default to **Anthropic Claude Sonnet (current generation)** behind a `VisionModel` interface in `backend/app/services/ai_models.py`. Provider swap is a config change.
+- **Embedding model selection.** Configurable via `AI_EMBEDDING_PROVIDER` + `AI_EMBEDDING_MODEL`. Default to **OpenAI `text-embedding-3-small`**. Used by the condition resolver in [AI Quantity Suggestions](ai-quantity-suggestions.md).
 - **Liveblocks broadcast.** Reuse the existing measurement sync channel for AI-created measurements. Add a new presence event for AI run progress.
 - **Cost telemetry.** Wrap every external model call in a small helper that records `cost_cents` and `tokens_used` to the active `ai_runs` row.
 - **Per-sheet AI lock** implemented as a Postgres advisory lock keyed by `hash(plan_id, sheet_id)` plus an `ai_runs.status` check.

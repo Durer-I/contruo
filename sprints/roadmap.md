@@ -89,6 +89,23 @@ Polish, optimize, and prepare for production launch. At the end of this phase, C
 
 ---
 
+## Post-MVP: AI Auto-Takeoff Track
+
+After MVP launch, AI Auto-Takeoff is the highest-priority P1 effort and runs as its own dedicated sprint sequence rather than being slotted into the MVP roadmap. See **[sprints/ai/roadmap.md](ai/roadmap.md)** for the full 8-sprint plan.
+
+| AI Sprint | Focus | Key Deliverable |
+|-----------|-------|-----------------|
+| [Sprint AI-01](ai/sprint-ai-01.md) | Foundations & Infrastructure | New tables, Celery AI queue, provider abstraction, per-sheet AI lock, manual run trigger |
+| [Sprint AI-02](ai/sprint-ai-02.md) | Title Block + Sheet Classification | Auto-detect title block, lexical + vision classifier, sheet index UI |
+| [Sprint AI-03](ai/sprint-ai-03.md) | Schedule + Legend Extraction | Multi-strategy table extraction, heuristic-first tag column ID, legend symbol templates |
+| [Sprint AI-04](ai/sprint-ai-04.md) | Condition Resolver | Match -> Template -> Create with embedding-based matching, "Save to library?" nudge |
+| [Sprint AI-05](ai/sprint-ai-05.md) | AI Layer UX | Overlays, review panel, confidence tiers, run health summary, keyboard shortcuts |
+| [Sprint AI-06](ai/sprint-ai-06.md) | Symbol + Callout Detection | OpenCV multi-scale matching, balloon detection, tag-to-drawing mapping (first real measurements) |
+| [Sprint AI-07](ai/sprint-ai-07.md) | Wall Detection | Vector parallel-pair clustering, opening detection, single-row wall geometry, viewer toggle |
+| [Sprint AI-08](ai/sprint-ai-08.md) | Room + Hatch Detection | Planar-graph rooms, hatch detection (vector + raster), legend swatch matching |
+
+---
+
 ## Sprint Status Tracker
 
 
@@ -163,6 +180,9 @@ graph TD
 | `features/collaboration/comments-and-markup.md`   | Post-MVP (Sprint 13 groundwork deferred — schema not added yet) |
 | `features/collaboration/activity-log.md`          | Post-MVP (groundwork in Sprint 01) |
 | `features/core/volume-takeoff.md`                 | Post-MVP                           |
+| `features/ai/ai-auto-takeoff.md`                  | AI Track: AI-01 through AI-08 (see [ai/roadmap.md](ai/roadmap.md)) |
+| `features/ai/ai-element-recognition.md`           | AI Track: AI-06, AI-07, AI-08      |
+| `features/ai/ai-quantity-suggestions.md`          | AI Track: AI-04                    |
 
 
 ---

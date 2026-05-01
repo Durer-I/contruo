@@ -218,6 +218,9 @@ def process_plan(self, plan_id_str: str) -> dict:
                         "project_id": project_id,
                         "page_number": page.page_number,
                         "sheet_name": page.sheet_name,
+                        # Heuristic-extracted name -- re-extract may overwrite.
+                        # Manual rename (PATCH /sheets/{id}) flips this to 'manual'.
+                        "sheet_name_source": "auto" if page.sheet_name else None,
                         "width_px": page.width_px,
                         "height_px": page.height_px,
                         "thumbnail_path": thumb_path,
