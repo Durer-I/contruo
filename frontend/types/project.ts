@@ -86,7 +86,11 @@ export type SheetType =
   | "other";
 
 /** Which path produced the AI-02 classification for a sheet. */
-export type SheetClassificationMethod = "lexical" | "vision" | "manual";
+export type SheetClassificationMethod =
+  | "lexical"
+  | "vision"
+  | "manual"
+  | "sheet_number";
 
 /** Where the current ``sheet_name`` came from. ``null`` is treated as ``'auto'``
  * by writers so legacy rows are eligible to be overwritten on a future
@@ -101,6 +105,12 @@ export interface SheetInfo {
   project_id: string;
   page_number: number;
   sheet_name: string | null;
+  /**
+   * Drawing identifier extracted from the title block (e.g. ``"A101"``,
+   * ``"G1.1"``, ``"S-100"``). Null until the AI-02b auto-name flow runs.
+   * Guarded by the same ``sheet_name_source`` flag as ``sheet_name``.
+   */
+  sheet_number?: string | null;
   /** AI-02b: which path produced the current sheet name. */
   sheet_name_source?: SheetNameSource | null;
   scale_value: number | null;

@@ -7,4 +7,13 @@ export type CollaborationBroadcastEvent =
       measurementIds?: string[];
       deletedIds?: string[];
     }
-  | { type: "contruo.conditions_changed" };
+  | { type: "contruo.conditions_changed" }
+  /** Celery auto-name task finished; clients should refetch project sheets. */
+  | {
+      type: "sheets.auto_named";
+      data: {
+        plan_id: string;
+        duration_ms?: number;
+        counters?: Record<string, unknown>;
+      };
+    };

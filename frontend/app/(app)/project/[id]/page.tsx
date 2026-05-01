@@ -75,7 +75,7 @@ export default function ProjectPage() {
   /** True while silent refetch runs (e.g. after scale save) — shows inline loader in viewer. */
   const [sheetsRefreshing, setSheetsRefreshing] = useState(false);
 
-  const loadAll = useCallback(async (options?: { silent?: boolean }) => {
+  const loadAll = useCallback(async (options?: { silent?: boolean }): Promise<SheetInfo[] | undefined> => {
     const silent = options?.silent === true;
     const forId = projectId;
     if (!forId) {
@@ -83,7 +83,7 @@ export default function ProjectPage() {
         setProjectLoading(false);
         setPlansSheetsLoading(false);
       }
-      return;
+      return undefined;
     }
 
     const stillHere = () => activeProjectIdRef.current === forId;
@@ -121,9 +121,9 @@ export default function ProjectPage() {
         } catch (e) {
           const msg = e instanceof ApiError ? e.message : "Failed to load project";
           fail(msg, "project");
-          return;
+          return undefined;
         }
-        if (!stillHere()) return;
+        if (!stillHere()) return undefined;
         setProject(p);
         setProjectLoading(false);
 
@@ -135,32 +135,34 @@ export default function ProjectPage() {
             ]);
             return { plans: plansResp.plans, sheets: sheetsResp.sheets };
           });
-          if (!stillHere()) return;
+          if (!stillHere()) return undefined;
           setPlans(bundle.plans);
           setSheets(bundle.sheets);
           setPlansSheetsError(null);
         } catch (e) {
           const msg = e instanceof ApiError ? e.message : "Failed to load plans or sheets";
           fail(msg, "plans_sheets");
-          return;
+          return undefined;
         }
-        if (!stillHere()) return;
+        if (!stillHere()) return undefined;
         setPlansSheetsLoading(false);
+        return undefined;
       } else {
         const [p, plansResp, sheetsResp] = await Promise.all([
           api.get<ProjectInfo>(`/api/v1/projects/${forId}`),
           api.get<{ plans: PlanInfo[] }>(`/api/v1/projects/${forId}/plans`),
           api.get<{ sheets: SheetInfo[] }>(`/api/v1/projects/${forId}/sheets`),
         ]);
-        if (!stillHere()) return;
+        if (!stillHere()) return undefined;
         setProject(p);
         setPlans(plansResp.plans);
         setSheets(sheetsResp.sheets);
         setPlansSheetsError(null);
+        return sheetsResp.sheets;
       }
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : "Failed to load project";
-      if (!stillHere()) return;
+      if (!stillHere()) return undefined;
       if (!silent) {
         setProjectLoading(false);
         setPlansSheetsLoading(false);
@@ -173,10 +175,10 @@ export default function ProjectPage() {
   }, [projectId]);
 
   /** Refetch project/plans/sheets without full-page spinner (keeps PDF viewer mounted). */
-  const refreshSheetsSilently = useCallback(async () => {
+  const refreshSheetsSilently = useCallback(async (): Promise<SheetInfo[] | undefined> => {
     setSheetsRefreshing(true);
     try {
-      await loadAll({ silent: true });
+      return await loadAll({ silent: true });
     } finally {
       setSheetsRefreshing(false);
     }

@@ -7,7 +7,7 @@ fake sync session (mock-at-the-boundary). We verify:
   ``ai_run.status_changed``.
 * On stage exception, the run transitions to ``failed``, the lock is released,
   and the failure is broadcast.
-* The Celery chain is ordered correctly (six stage tasks between start and
+* The Celery chain is ordered correctly (stage tasks between start and
   finalize).
 """
 
@@ -98,20 +98,20 @@ def test_run_stage_writes_timing_and_broadcasts_on_success():
         patch.object(ai_pipeline.liveblocks_service, "broadcast_event_sync", return_value=True) as bx,
     ):
         result = ai_pipeline._run_stage(
-            ai_run_id_str=str(run.id), stage="title_block", body=_body
+            ai_run_id_str=str(run.id), stage="classification", body=_body
         )
 
     assert result == str(run.id)
     assert len(body_calls) == 1
     record_timing.assert_called_once()
     kwargs = record_timing.call_args.kwargs
-    assert kwargs["stage"] == "title_block"
+    assert kwargs["stage"] == "classification"
     assert kwargs["cache_hit"] is False
     assert isinstance(kwargs["duration_ms"], int)
     bx.assert_called_once()
     assert bx.call_args.kwargs["event_type"] == "ai_run.status_changed"
     assert bx.call_args.kwargs["data"]["status"] == "running"
-    assert bx.call_args.kwargs["data"]["stage"] == "title_block"
+    assert bx.call_args.kwargs["data"]["stage"] == "classification"
     assert bx.call_args.kwargs["data"]["stage_index"] == 1
     # Sessions should have been opened more than once (load context, record timing, fetch org/project).
     assert len(sessions) >= 2
@@ -177,25 +177,25 @@ def test_run_stage_failure_marks_failed_releases_lock_and_broadcasts():
 # ── Chain shape ──────────────────────────────────────────────────────────────
 
 
-def test_pipeline_chain_includes_all_six_stages_in_order():
-    chain = ai_pipeline.build_pipeline_chain(uuid.uuid4())
-    # Celery's chain stores its tasks on .tasks. Order matters: start -> 5 stages -> finalize.
+def test_pipeline_chain_stages_in_order():
+    chain = ai_pipeline.build_pipeline_chain(uuid.uuid4(), uuid.uuid4())
+    # Celery's chain stores its tasks on .tasks. Prep -> start -> stages -> finalize.
     task_names = [t.name for t in chain.tasks]
     assert task_names == [
+        "ai_pipeline.pipeline_prep_auto_name",
         "ai_pipeline.start_ai_run",
-        "ai_pipeline.stage_title_block",
         "ai_pipeline.stage_classification",
         "ai_pipeline.stage_schedules_legends",
         "ai_pipeline.stage_element_detection",
         "ai_pipeline.stage_resolver_and_layer_write",
         "ai_pipeline.finalize_ai_run",
     ]
+    assert chain.tasks[1].immutable is True
 
 
 def test_pipeline_stages_constant_matches_chain_order():
     """``PIPELINE_STAGES`` is the canonical list; the chain must respect it."""
     expected_run_stages = (
-        "title_block",
         "classification",
         "schedules_legends",
         "element_detection",
@@ -203,31 +203,4 @@ def test_pipeline_stages_constant_matches_chain_order():
         "finalize",
     )
     assert ai_pipeline.PIPELINE_STAGES == expected_run_stages
-    assert ai_pipeline.TOTAL_STAGES == 6
-
-
-def test_stage_title_block_runs_as_noop_until_ai_02b_lands():
-    """``stage_title_block`` is a registered no-op while AI-02b's title-block
-    flow is being redesigned. The chain must still walk all six stages so
-    Stage 2 (classification) runs and the run finalizes; Stage 1 simply
-    contributes a zero-cost timing entry. Once AI-02b lands, the body is
-    swapped in via ``_run_stage`` without touching the chain wiring.
-    """
-    plan = _make_plan(uuid.uuid4())
-    run = _make_run(plan_id=plan.id, status="running")
-
-    with (
-        _patched_session(run, plan),
-        patch.object(ai_pipeline.ai_run_service, "record_stage_timing_sync") as record_timing,
-        patch.object(ai_pipeline.liveblocks_service, "broadcast_event_sync", return_value=True),
-    ):
-        result = ai_pipeline._run_stage(
-            ai_run_id_str=str(run.id),
-            stage="title_block",
-            body=ai_pipeline._noop_stage,
-        )
-
-    assert result == str(run.id)
-    record_timing.assert_called_once()
-    assert record_timing.call_args.kwargs["stage"] == "title_block"
-    assert record_timing.call_args.kwargs["cache_hit"] is False
+    assert ai_pipeline.TOTAL_STAGES == 5

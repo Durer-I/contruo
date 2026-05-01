@@ -1,26 +1,29 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2, Sparkles, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
+  cancelAiRun,
   createAiRun,
   type AiRun,
   type AiRunStatus,
 } from "@/lib/ai-runs";
 
+/** Count of entries in ``PIPELINE_STAGES`` (backend); keep in sync for progress text. */
+const PIPELINE_STAGE_COUNT = 5;
+
 const STAGE_PILL_LABELS: Record<string, string> = {
   start: "Starting",
-  title_block: "Stage 1 of 6 (title block)",
-  classification: "Stage 2 of 6 (classification)",
-  schedules_legends: "Stage 3 of 6 (schedules & legends)",
-  element_detection: "Stage 4 of 6 (elements)",
-  resolver_and_layer_write: "Stage 5 of 6 (resolver)",
-  finalize: "Stage 6 of 6 (finalize)",
+  classification: "Stage 1 of 5 (classification)",
+  schedules_legends: "Stage 2 of 5 (schedules & legends)",
+  element_detection: "Stage 3 of 5 (elements)",
+  resolver_and_layer_write: "Stage 4 of 5 (resolver)",
+  finalize: "Stage 5 of 5 (finalize)",
 };
 
 interface PillState {
@@ -32,6 +35,13 @@ function pillFromRun(
   run: AiRun | null,
   liveBroadcast: { stage?: string; status?: AiRunStatus } | null
 ): PillState {
+  // DB terminal states win over a stale Liveblocks "running" payload.
+  if (run?.status === "completed")
+    return { label: "Completed", variant: "completed" };
+  if (run?.status === "failed") return { label: "Failed", variant: "failed" };
+  if (run?.status === "cancelled")
+    return { label: "Cancelled", variant: "failed" };
+
   // Live broadcast wins for transient states so the pill is smoother than
   // the polling cadence.
   if (liveBroadcast?.status === "running" && liveBroadcast.stage) {
@@ -44,13 +54,13 @@ function pillFromRun(
     const stages = run.summary_jsonb?.stages ?? {};
     const completedCount = Object.keys(stages).length;
     return {
-      label: completedCount > 0 ? `Running (${completedCount}/6)` : "Running",
+      label:
+        completedCount > 0
+          ? `Running (${completedCount}/${PIPELINE_STAGE_COUNT})`
+          : "Running",
       variant: "running",
     };
   }
-  if (run.status === "completed") return { label: "Completed", variant: "completed" };
-  if (run.status === "failed") return { label: "Failed", variant: "failed" };
-  if (run.status === "cancelled") return { label: "Cancelled", variant: "failed" };
   return { label: "Idle", variant: "idle" };
 }
 
@@ -82,23 +92,32 @@ export function RunAutoTakeoffButton({
   const [submitting, setSubmitting] = useState(false);
 
   const pill = useMemo(() => pillFromRun(run, liveBroadcast), [run, liveBroadcast]);
-  const isActive =
-    run?.status === "running" ||
-    run?.status === "queued" ||
-    liveBroadcast?.status === "running" ||
-    liveBroadcast?.status === "queued";
+  const runActive =
+    run !== null &&
+    (run.status === "queued" || run.status === "running");
 
   const handleClick = useCallback(async () => {
     if (!planId) return;
     setSubmitting(true);
     try {
-      await createAiRun(projectId, { plan_id: planId });
-      await refresh();
-      toast.success("AI Auto-Takeoff started");
+      if (runActive && run?.id) {
+        await cancelAiRun(projectId, run.id);
+        await refresh();
+        toast.success("AI Auto-Takeoff cancelled");
+      } else {
+        await createAiRun(projectId, { plan_id: planId });
+        await refresh();
+        toast.success("AI Auto-Takeoff started");
+      }
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.code === "AI_RUN_LOCKED") {
           toast.warning("An AI run is already in progress for this plan.");
+          await refresh();
+        } else if (e.code === "AI_RUN_NOT_CANCELLABLE") {
+          toast.warning(
+            e.message || "This run can no longer be cancelled (it may have finished)."
+          );
           await refresh();
         } else if (e.code === "AI_COST_LIMIT") {
           toast.error(
@@ -107,47 +126,52 @@ export function RunAutoTakeoffButton({
         } else if (e.code === "PLAN_NOT_READY") {
           toast.warning("This plan is still processing. Try again shortly.");
         } else {
-          toast.error(e.message || "Failed to start AI Auto-Takeoff");
+          toast.error(e.message || "AI Auto-Takeoff request failed");
         }
       } else {
-        toast.error("Failed to start AI Auto-Takeoff");
+        toast.error("AI Auto-Takeoff request failed");
       }
     } finally {
       setSubmitting(false);
     }
-  }, [planId, projectId, refresh]);
+  }, [planId, projectId, refresh, run?.id, runActive]);
 
   if (!visible) return null;
 
   const buttonDisabled =
-    submitting || isActive || planId === null || Boolean(disabledReason);
-  const tooltip =
-    disabledReason ??
-    (isActive ? "An AI run is already in progress" : "Run AI Auto-Takeoff on this plan");
+    submitting || planId === null || Boolean(disabledReason);
+
+  const tooltip = disabledReason
+    ? disabledReason
+    : runActive
+      ? "Cancel AI Auto-Takeoff"
+      : "Run AI Auto-Takeoff on this plan";
 
   return (
     <div className="flex items-center gap-1 rounded-3xl border border-border bg-card/80 p-0.5">
       <Button
         type="button"
         size="sm"
-        variant={isActive ? "ghost" : "default"}
+        variant={runActive ? "ghost" : "default"}
         className={cn(
           "h-8 shrink-0 gap-1.5 rounded-3xl px-3 text-xs font-medium",
-          isActive && "text-foreground hover:bg-surface-overlay"
+          runActive && "text-foreground hover:bg-surface-overlay"
         )}
         disabled={buttonDisabled}
         onClick={() => {
           void handleClick();
         }}
         title={tooltip}
-        aria-label="Run AI Auto-Takeoff"
+        aria-label={runActive ? "Cancel AI Auto-Takeoff" : "Run AI Auto-Takeoff"}
       >
         {submitting || pill.variant === "running" ? (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+        ) : runActive ? (
+          <X className="h-3.5 w-3.5 shrink-0" aria-hidden />
         ) : (
           <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
         )}
-        <span className="truncate">Velox</span>
+        <span className="truncate">{runActive ? "Stop" : "Velox"}</span>
       </Button>
       <span
         className={cn(

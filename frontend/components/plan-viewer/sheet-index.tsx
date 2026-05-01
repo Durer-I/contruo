@@ -6,7 +6,7 @@
  * Extracted from `plan-viewer-workspace.tsx` (Sprint AI-02). Adds AI-02
  * classification surface area on top of behavior-parity with the prior
  * inline JSX:
- *  - Discipline color dot + sheet-type pill per row.
+ *  - Discipline color dot + sheet-number pill per row (when available).
  *  - Low-confidence dotted-outline indicator with tooltip.
  *  - Filter dropdown by discipline + sheet type.
  *  - Plain text search over sheet name + page number.
@@ -27,10 +27,12 @@ import {
   AlertTriangle,
   Filter,
   Pencil,
+  Wand2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Tooltip,
   TooltipContent,
@@ -47,6 +49,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 import { renameSheet } from "@/lib/sheets";
@@ -83,6 +95,14 @@ export interface SheetIndexProps {
     sheet_name: string | null;
     sheet_name_source: "auto" | "manual" | null;
   }) => void;
+  /**
+   * Auto-name sheets (title-region extraction). When omitted the button is hidden.
+   */
+  onAutoName?: (options?: { overwriteManual?: boolean }) => void | Promise<void>;
+  /** Spinner state for the auto-name button -- parent owns the in-flight request. */
+  autoNameInProgress?: boolean;
+  /** Hide / disable the button when the user lacks edit permission. */
+  canAutoName?: boolean;
 }
 
 const DEFAULT_LOW_CONFIDENCE_THRESHOLD = 0.7;
@@ -149,6 +169,8 @@ function methodLabel(method: SheetClassificationMethod | null | undefined): stri
       return "Auto-classified by vision model";
     case "manual":
       return "Manually classified";
+    case "sheet_number":
+      return "Discipline from sheet number";
     default:
       return "Not yet classified";
   }
@@ -166,6 +188,9 @@ export function SheetIndex({
   lowConfidenceThreshold = DEFAULT_LOW_CONFIDENCE_THRESHOLD,
   canEditMeasurements = false,
   onSheetRenamed,
+  onAutoName,
+  autoNameInProgress = false,
+  canAutoName = false,
 }: SheetIndexProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -286,7 +311,8 @@ export function SheetIndex({
       if (!q) return true;
       const name = (sheet.sheet_name ?? "").toLowerCase();
       const page = String(sheet.page_number);
-      return name.includes(q) || page.includes(q);
+      const num = (sheet.sheet_number ?? "").toLowerCase();
+      return name.includes(q) || page.includes(q) || num.includes(q);
     });
   }, [planSheets, searchQuery, disciplineFilter, typeFilter]);
 
@@ -313,6 +339,34 @@ export function SheetIndex({
     searchQuery.trim().length > 0;
   const showFilters = availableDisciplines.length + availableTypes.length > 0;
 
+  const manualRenameCount = useMemo(
+    () => planSheets.filter((s) => s.sheet_name_source === "manual").length,
+    [planSheets]
+  );
+
+  // Confirmation dialog state for the auto-name button. We only ask for
+  // confirmation when there are manual renames at risk -- in the common case
+  // (zero manual renames) the click should be one-shot.
+  const [autoNameConfirmOpen, setAutoNameConfirmOpen] = useState(false);
+  const [overwriteManualSheets, setOverwriteManualSheets] = useState(false);
+  const handleAutoNameClick = useCallback(() => {
+    if (!onAutoName || autoNameInProgress) return;
+    if (manualRenameCount > 0) {
+      setOverwriteManualSheets(false);
+      setAutoNameConfirmOpen(true);
+      return;
+    }
+    void onAutoName();
+  }, [onAutoName, autoNameInProgress, manualRenameCount]);
+  const handleAutoNameConfirm = useCallback(() => {
+    const overwrite = overwriteManualSheets;
+    setAutoNameConfirmOpen(false);
+    if (onAutoName) void onAutoName({ overwriteManual: overwrite });
+  }, [onAutoName, overwriteManualSheets]);
+
+  const showAutoNameButton =
+    typeof onAutoName === "function" && planSheets.length > 0;
+
   return (
     <>
       <div className="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5">
@@ -321,12 +375,45 @@ export function SheetIndex({
           {filteredSheets.length !== planSheets.length ? `/${planSheets.length}` : ""}
           )
         </span>
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-1">
           {sheetThumbsLoading ? (
             <Loader2
               className="size-3.5 animate-spin text-muted-foreground"
               aria-hidden
             />
+          ) : null}
+          {showAutoNameButton ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1 px-1.5 text-[10px]"
+                      disabled={!canAutoName || autoNameInProgress}
+                      onClick={handleAutoNameClick}
+                      aria-label="Auto-name sheets"
+                    >
+                      {autoNameInProgress ? (
+                        <Loader2
+                          className="size-3.5 animate-spin"
+                          aria-hidden
+                        />
+                      ) : (
+                        <Wand2 className="size-3.5 shrink-0" aria-hidden />
+                      )}
+                    </Button>
+                  }
+                />
+                <TooltipContent>
+                  {canAutoName
+                    ? "Auto-name sheets"
+                    : "You don't have permission to auto-name sheets"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           ) : null}
           <div
             className="flex rounded-md border border-border bg-background p-0.5"
@@ -358,6 +445,54 @@ export function SheetIndex({
           </div>
         </div>
       </div>
+
+      <AlertDialog
+        open={autoNameConfirmOpen}
+        onOpenChange={setAutoNameConfirmOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Auto-name sheets?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Reads each sheet&apos;s title block to update names and drawing
+              numbers. Manually renamed sheets are skipped unless you check the
+              option below.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="grid gap-3 px-1 text-sm">
+            <p className="text-muted-foreground">
+              You have{" "}
+              <span className="font-medium text-foreground">
+                {manualRenameCount} manually renamed{" "}
+                {manualRenameCount === 1 ? "sheet" : "sheets"}
+              </span>
+              .
+            </p>
+            <Label
+              htmlFor="auto-name-overwrite-manual"
+              className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border bg-card px-3 py-2.5 font-normal leading-snug text-muted-foreground"
+            >
+              <input
+                id="auto-name-overwrite-manual"
+                type="checkbox"
+                checked={overwriteManualSheets}
+                onChange={(e) => setOverwriteManualSheets(e.target.checked)}
+                className="mt-0.5 size-4 shrink-0 rounded border-border accent-primary"
+              />
+              <span>
+                Also overwrite manually renamed sheets (replace their names from
+                the title block)
+              </span>
+            </Label>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleAutoNameConfirm}>
+              Auto-name sheets
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {planSheets.length > 0 ? (
         <div className="flex flex-col gap-1.5 border-b border-border px-2 py-1.5">
@@ -497,15 +632,6 @@ function SheetClassificationFilter({
       </SelectTrigger>
 
 
-      {/* <SelectTrigger
-        className="h-7 min-w-0 flex-1 px-2 text-[10px]"
-        aria-label={ariaLabel}
-      >
-        <Filter className="size-3 shrink-0 opacity-60" aria-hidden />
-        <SelectValue />
-      </SelectTrigger> */}
-
-      
       <SelectPortal>
         <SelectPositioner sideOffset={4}>
           <SelectPopup className="min-w-[140px]">
@@ -564,7 +690,7 @@ function SheetIndexRow({
   const isManuallyNamed = sheet.sheet_name_source === "manual";
 
   const discipline = sheet.discipline ?? null;
-  const sheetType = sheet.sheet_type ?? null;
+  const sheetNumber = sheet.sheet_number?.trim() ?? null;
   const confidence = sheet.classification_confidence ?? null;
   const isLowConfidence =
     confidence !== null &&
@@ -685,27 +811,32 @@ function SheetIndexRow({
             </div>
           )}
           <span className="text-[10px] text-muted-foreground">{scaleLine}</span>
-          {discipline || sheetType || isLowConfidence ? (
+          {discipline || sheetNumber || isLowConfidence ? (
             <div className="mt-0.5 flex flex-wrap items-center gap-1">
               {discipline ? (
-                <Tooltip>
-                  <TooltipTrigger >
-                    <span
-                      className={cn(
-                        "inline-block size-2 shrink-0 rounded-full",
-                        DISCIPLINE_DOT_CLASS[discipline]
-                      )}
-                      aria-label={`Discipline: ${DISCIPLINE_LABEL[discipline]}`}
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {DISCIPLINE_LABEL[discipline]}
-                  </TooltipContent>
-                </Tooltip>
+                // FUTURE IMPLEMENTATION
+                <></>
+                // <Tooltip>
+                //   <TooltipTrigger >
+                //     <span
+                //       className={cn(
+                //         "inline-block size-2 shrink-0 rounded-full",
+                //         DISCIPLINE_DOT_CLASS[discipline]
+                //       )}
+                //       aria-label={`Discipline: ${DISCIPLINE_LABEL[discipline]}`}
+                //     />
+                //   </TooltipTrigger>
+                //   <TooltipContent>
+                //     {DISCIPLINE_LABEL[discipline]}
+                //   </TooltipContent>
+                // </Tooltip>
               ) : null}
-              {sheetType ? (
-                <span className="rounded border border-border bg-background px-1 text-[9px] uppercase tracking-wide text-muted-foreground">
-                  {SHEET_TYPE_LABEL[sheetType]}
+              {sheetNumber ? (
+                <span
+                  className="rounded border border-border bg-background px-1 font-mono text-[9px] font-medium text-muted-foreground"
+                  aria-label={`Sheet number ${sheetNumber}`}
+                >
+                  {sheetNumber}
                 </span>
               ) : null}
               {isLowConfidence ? (

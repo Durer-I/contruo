@@ -35,6 +35,10 @@ class SheetSummary:
     project_id: uuid.UUID
     page_number: int
     sheet_name: str | None
+    #: Drawing identifier from the title block (e.g. ``"A101"``). Populated
+    #: by the AI-02b auto-name flow; nullable for sheets that haven't been
+    #: processed or where extraction couldn't recover a number.
+    sheet_number: str | None
     #: ``'auto'`` | ``'manual'`` | ``None`` -- see ``Sheet.sheet_name_source``.
     sheet_name_source: str | None
     scale_value: float | None
@@ -192,6 +196,7 @@ async def list_project_sheets(
             Sheet.project_id,
             Sheet.page_number,
             Sheet.sheet_name,
+            Sheet.sheet_number,
             Sheet.sheet_name_source,
             Sheet.scale_value,
             Sheet.scale_unit,
@@ -218,6 +223,7 @@ async def list_project_sheets(
             project_id=row.project_id,
             page_number=row.page_number,
             sheet_name=row.sheet_name,
+            sheet_number=row.sheet_number,
             sheet_name_source=row.sheet_name_source,
             scale_value=row.scale_value,
             scale_unit=row.scale_unit,

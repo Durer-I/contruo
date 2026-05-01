@@ -266,7 +266,9 @@ def extract_text_in_rect(page: Any, rect_pts: Any) -> str:
         raise RuntimeError("PyMuPDF (fitz) is not installed")
     rect = _coerce_rect(rect_pts)
     try:
-        raw = page.get_text("text", clip=rect) or ""
+        # ``sort=True`` matches the title-block prototype: reading order inside
+        # the clip follows visual position (critical for multi-line anchors).
+        raw = page.get_text("text", clip=rect, sort=True) or ""
     except Exception:  # pragma: no cover -- fitz raises on malformed clips
         logger.exception("get_text(clip=) failed")
         return ""

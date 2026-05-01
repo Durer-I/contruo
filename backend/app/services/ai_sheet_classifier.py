@@ -58,6 +58,7 @@ DISCIPLINE_PREFIXES: dict[str, str] = {
     "Q": "equipment",
 }
 
+
 #: Allowed discipline values (kept in sync with the frontend dot-color map).
 ALL_DISCIPLINES: tuple[str, ...] = (
     "architectural",
@@ -74,6 +75,46 @@ ALL_DISCIPLINES: tuple[str, ...] = (
     "equipment",
     "other",
 )
+
+
+def infer_discipline_from_sheet_number(sheet_number: str | None) -> str | None:
+    """Map drawing sheet ID prefix to discipline after auto-name.
+
+    Uses common US sheet numbering (A=architectural, S=structural, …). Longest
+    literal prefix wins so ``FP`` maps to fire protection before single ``F``.
+    Leading punctuation/spaces are skipped (e.g. ``"- A101"``).
+
+    Returns ``None`` when no configured prefix matches — callers should leave
+    ``Sheet.discipline`` unchanged in that case.
+    """
+    if not sheet_number:
+        return None
+    raw = sheet_number.strip().upper()
+    if not raw:
+        return None
+    i = 0
+    while i < len(raw) and not raw[i].isalpha():
+        i += 1
+    if i >= len(raw):
+        return None
+    tail = raw[i:]
+    if tail.startswith("FP"):
+        return "fire_protection"
+    letter = tail[0]
+    single_letter: dict[str, str] = {
+        "A": "architectural",
+        "S": "structural",
+        "P": "plumbing",
+        "E": "electrical",
+        "M": "mechanical",
+        "F": "fire_protection",
+        "L": "landscape",
+    }
+    d = single_letter.get(letter)
+    if d is not None and d in ALL_DISCIPLINES:
+        return d
+    return None
+
 
 #: Allowed sheet types. ``plan`` is the most common; ``schedule`` and
 #: ``legend`` are first-class because Stage 3 needs to extract from them.
@@ -627,5 +668,6 @@ __all__ = [
     "bulk_upsert_classifications",
     "classify_lexical",
     "classify_vision_batch",
+    "infer_discipline_from_sheet_number",
     "needs_vision_fallback",
 ]

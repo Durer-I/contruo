@@ -171,7 +171,7 @@ async def test_create_ai_run_succeeds_for_estimator():
         patch(
             "app.tasks.ai_pipeline.build_pipeline_chain",
             return_value=chain_mock,
-        ),
+        ) as bpc_mock,
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             r = await ac.post(
@@ -183,9 +183,59 @@ async def test_create_ai_run_succeeds_for_estimator():
     body = r.json()
     assert body["status"] == "queued"
     assert body["plan_id"] == str(plan_id)
+    bpc_mock.assert_called_once_with(run.id, run.plan_id)
     assert chain_mock.apply_async.called
 
 
+@pytest.mark.anyio
+async def test_cancel_ai_run_succeeds_for_estimator():
+    ctx = _ctx("estimator")
+    _override_auth(ctx)
+    _override_db(_mock_db())
+    pid = uuid.uuid4()
+    plan_id = uuid.uuid4()
+    run = _make_run(
+        org_id=ctx.org_id, project_id=pid, plan_id=plan_id, triggered_by=ctx.user_id
+    )
+    run.status = "cancelled"
+
+    async def fake_cancel(*_a, **_k):
+        return run
+
+    with (
+        patch(
+            "app.services.project_service.assert_project_visible",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch(
+            "app.services.ai_run_service.cancel_run",
+            new_callable=AsyncMock,
+            side_effect=fake_cancel,
+        ),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            r = await ac.post(
+                f"/api/v1/projects/{pid}/ai/runs/{run.id}/cancel",
+                json={},
+            )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "cancelled"
+
+
+@pytest.mark.anyio
+async def test_cancel_ai_run_requires_edit_permission():
+    ctx = _ctx("viewer")
+    _override_auth(ctx)
+    _override_db(_mock_db())
+    pid = uuid.uuid4()
+    rid = uuid.uuid4()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.post(f"/api/v1/projects/{pid}/ai/runs/{rid}/cancel", json={})
+
+    assert r.status_code == 403
 @pytest.mark.anyio
 async def test_create_ai_run_returns_409_when_concurrent_run_active():
     ctx = _ctx("estimator")

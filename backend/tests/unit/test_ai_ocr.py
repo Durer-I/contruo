@@ -4,8 +4,8 @@ Verifies:
 * `is_available()` resolves the binary via the configured env var first, then PATH.
 * Missing-binary path returns False and `ocr_image_bytes` returns "" gracefully.
 * The probe is cached -- repeated calls don't re-shell out to ``which``.
-* The title-block preset forwards PSM 6 / OEM 3 to pytesseract and
-  preprocesses the image (Sprint AI-02b: prototype OCR parity).
+* The title-block preset forwards PSM 4 / OEM 1 to pytesseract and
+  binarizes the image with Otsu (Sprint AI-02b: prototype OCR parity).
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ def test_ocr_image_bytes_title_block_preset_forwards_config_and_preprocesses():
 
     1. binarize the image (we assert by checking the PIL object handed to
        ``pytesseract`` is mode ``"1"``), and
-    2. forward the PSM 6 / OEM 3 string in the ``config`` kwarg.
+    2. forward the PSM 4 / OEM 1 string in the ``config`` kwarg.
 
     Without both, the OCR fallback regresses to Tesseract defaults that
     under-recognize tightly-packed title-block text -- exactly the failure
@@ -105,10 +105,8 @@ def test_ocr_image_bytes_title_block_preset_forwards_config_and_preprocesses():
     assert out == "A1.01 First Floor Plan"
     fake_pyt.image_to_string.assert_called_once()
     args, kwargs = fake_pyt.image_to_string.call_args
-    # PSM 6 (uniform block of text) and OEM 3 (default LSTM+legacy) must
-    # be present in the forwarded config string.
-    assert "psm 6" in kwargs["config"]
-    assert "oem 3" in kwargs["config"]
+    assert "psm 4" in kwargs["config"]
+    assert "oem 1" in kwargs["config"]
     # Image preprocessing converted the input to a 1-bit binary image so
     # Tesseract sees clean black-on-white pixels.
     forwarded_img = args[0]

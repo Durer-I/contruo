@@ -81,6 +81,7 @@ def _serialize_sheet(sheet) -> SheetResponse:
         project_id=sheet.project_id,
         page_number=sheet.page_number,
         sheet_name=sheet.sheet_name,
+        sheet_number=getattr(sheet, "sheet_number", None),
         sheet_name_source=getattr(sheet, "sheet_name_source", None),
         scale_value=sheet.scale_value,
         scale_unit=sheet.scale_unit,

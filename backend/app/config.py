@@ -95,6 +95,41 @@ class Settings(BaseSettings):
     ai_anthropic_vision_input_per_1k_cents: float = 0.3
     ai_anthropic_vision_output_per_1k_cents: float = 1.5
 
+    # AI-02b: Title-block auto-name flow ─────────────────────────────────────
+    #: Master kill-switch. When false, the API endpoint returns 503 and the
+    #: frontend hides the button. Lets ops disable the feature per-deployment
+    #: without code changes if early users hit edge cases on a particular
+    #: plan set.
+    ai_auto_name_enabled: bool = True
+    #: Title-block region heuristic: bottom-right corner box dimensions in
+    #: PDF user-space points. ~350x350 pts ~= 4.86" x 4.86" -- covers the
+    #: typical title block on D-size and ARCH-D sheets without grabbing
+    #: notes from the right margin.
+    ai_title_block_box_width_pts: float = 350.0
+    ai_title_block_box_height_pts: float = 350.0
+    #: DPI for the OCR fallback render. Bumped from the default 144 in
+    #: ``app/utils/pdf.py`` because title-block fonts are small (~6-8pt) and
+    #: 200 DPI is the sweet spot for Tesseract on that text size.
+    ai_title_block_clip_dpi: int = 200
+    #: Below this confidence (or when a field is null) the heuristic parser
+    #: escalates to the LLM cleanup pass.
+    ai_title_block_llm_min_confidence: float = 0.7
+    #: LLM provider + model for the title-block cleanup pass. Decoupled from
+    #: the global ``ai_llm_provider`` (Anthropic) on purpose: title-block
+    #: parsing is pure structured-text extraction where gpt-4o-mini's strict
+    #: JSON schema enforcement is the right tool. Other LLM tasks (AI-04
+    #: condition naming) keep using Anthropic.
+    ai_title_block_llm_provider: str = "openai"
+    ai_title_block_llm_model: str = "gpt-4o-mini"
+    #: OpenAI gpt-4o-mini pricing (cents per 1k tokens). Defaults match the
+    #: published rates as of 2026-04 ($0.15/Mtok input, $0.60/Mtok output).
+    ai_openai_llm_input_per_1k_cents: float = 0.015
+    ai_openai_llm_output_per_1k_cents: float = 0.06
+    #: Hard timeout per OpenAI call from the worker. Keeps a hung provider
+    #: from stalling the whole re-extract task.
+    ai_openai_llm_timeout_s: float = 20.0
+    ai_openai_llm_max_retries: int = 2
+
     @property
     def is_development(self) -> bool:
         return self.environment == "development"

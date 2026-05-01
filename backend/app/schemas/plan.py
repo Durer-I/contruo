@@ -53,6 +53,9 @@ class SheetResponse(BaseModel):
     project_id: uuid.UUID
     page_number: int
     sheet_name: str | None
+    #: Drawing identifier from the title block (e.g. ``"A101"``). Null until
+    #: the AI-02b auto-name flow runs against the plan.
+    sheet_number: str | None = None
     #: ``'auto'`` (extracted) | ``'manual'`` (user rename) | ``None`` (legacy).
     sheet_name_source: str | None = None
     scale_value: float | None
@@ -75,6 +78,9 @@ class SheetListItemResponse(BaseModel):
     project_id: uuid.UUID
     page_number: int
     sheet_name: str | None
+    #: Drawing identifier from the title block (e.g. ``"A101"``). Null until
+    #: the AI-02b auto-name flow runs against the plan.
+    sheet_number: str | None = None
     #: ``'auto'`` (extracted) | ``'manual'`` (user rename) | ``None`` (legacy).
     sheet_name_source: str | None = None
     scale_value: float | None
@@ -102,6 +108,7 @@ class SheetListItemResponse(BaseModel):
             project_id=s.project_id,
             page_number=s.page_number,
             sheet_name=s.sheet_name,
+            sheet_number=getattr(s, "sheet_number", None),
             sheet_name_source=s.sheet_name_source,
             scale_value=s.scale_value,
             scale_unit=s.scale_unit,

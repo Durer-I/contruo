@@ -12,6 +12,33 @@ from PIL import Image
 from app.services import ai_sheet_classifier
 
 
+@pytest.mark.parametrize(
+    "number,expected",
+    [
+        ("A101", "architectural"),
+        ("a-201", "architectural"),
+        ("  S-301 ", "structural"),
+        ("P-01", "plumbing"),
+        ("E501", "electrical"),
+        ("M-201", "mechanical"),
+        ("F-501", "fire_protection"),
+        ("FP-01", "fire_protection"),
+        ("FP100", "fire_protection"),
+        ("L-12", "landscape"),
+        ("- FP-9", "fire_protection"),
+        ("Z99", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_infer_discipline_from_sheet_number(number, expected):
+    assert ai_sheet_classifier.infer_discipline_from_sheet_number(number) == expected
+
+
+def test_infer_discipline_f_prefix_fire_protection():
+    assert ai_sheet_classifier.infer_discipline_from_sheet_number("FA100") == "fire_protection"
+
+
 def _png(width: int = 16, height: int = 16, color=(255, 255, 255)) -> bytes:
     img = Image.new("RGB", (width, height), color)
     buf = io.BytesIO()

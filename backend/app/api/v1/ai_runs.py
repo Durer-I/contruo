@@ -3,6 +3,8 @@
 Surface area:
 
 * ``POST /api/v1/projects/{project_id}/ai/runs`` -- start a new run.
+* ``POST /api/v1/projects/{project_id}/ai/runs/{ai_run_id}/cancel`` -- cancel a
+  queued or running run (cooperative with the Celery chain).
 * ``GET  /api/v1/projects/{project_id}/ai/runs`` -- list runs for a project.
 * ``GET  /api/v1/projects/{project_id}/ai/runs/{ai_run_id}`` -- run detail.
 
@@ -97,8 +99,36 @@ async def create_ai_run(
     # Enqueue the chain after commit so the worker never reads a row the API
     # transaction later rolled back.
     from app.tasks.ai_pipeline import build_pipeline_chain  # local: avoid celery import in API tests
-    build_pipeline_chain(run.id).apply_async()
+    build_pipeline_chain(run.id, run.plan_id).apply_async()
 
+    return AiRunResponse.from_model(run)
+
+
+@router.post(
+    "/{project_id}/ai/runs/{ai_run_id}/cancel",
+    response_model=AiRunResponse,
+    status_code=200,
+)
+async def cancel_ai_run(
+    project_id: uuid.UUID,
+    ai_run_id: uuid.UUID,
+    auth: AuthContext = Depends(require_permission(Permission.EDIT_MEASUREMENTS)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel a queued or running AI Auto-Takeoff run for this project.
+
+    Returns the updated run row (``status`` ``cancelled``). The worker chain
+    cooperatively stops at the next stage boundary. Idempotent when already
+    cancelled.
+    """
+    await project_service.assert_project_visible(db, auth, project_id)
+    run = await ai_run_service.cancel_run(
+        db,
+        org_id=auth.org_id,
+        project_id=project_id,
+        ai_run_id=ai_run_id,
+        user_id=auth.user_id,
+    )
     return AiRunResponse.from_model(run)
 
 

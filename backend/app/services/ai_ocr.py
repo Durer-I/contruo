@@ -28,19 +28,45 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-#: Tesseract config used for title-block OCR. Mirrors the prototype in
-#: ``AI/controller/title.py``: PSM 6 = "assume a uniform block of text",
-#: OEM 3 = "default LSTM + legacy combined". This is markedly more accurate
-#: than Tesseract's default (PSM 3 = fully automatic) on the small,
-#: tightly-packed labels typical of construction title blocks.
-TITLE_BLOCK_TESSERACT_CONFIG = "--oem 3 --psm 6"
-
-#: Threshold cutoff (0..255) for the title-block preprocessing path. Same
-#: constant as the prototype's ``cv2.threshold(..., 150, 255, ...)`` step --
-#: drops mid-tone pixels (background bleed, faint hatching) and keeps
-#: ink-dark text intact. Tuned for the typical 144-DPI clip render produced
-#: by ``app.utils.pdf.render_clip_to_png``.
+#: Threshold cutoff (0..255) for the optional fixed-threshold title-block
+#: preprocessing path (``preprocess="title_block_fixed"``).
 TITLE_BLOCK_THRESHOLD = 150
+
+
+def _otsu_threshold_from_histogram(hist: list[int]) -> int:
+    """Otsu threshold from a 256-bin grayscale histogram (PIL ``.histogram()``).
+
+    Pure Python -- matches the intent of ``cv2.threshold(..., THRESH_OTSU)``
+    without pulling NumPy/OpenCV into the worker image.
+    """
+    total = sum(hist)
+    if total <= 0:
+        return TITLE_BLOCK_THRESHOLD
+    sum_all = sum(i * c for i, c in enumerate(hist))
+    sum_b = 0
+    w_b = 0
+    best_t = 0
+    max_var = -1.0
+    for t in range(256):
+        w_b += hist[t]
+        if w_b == 0:
+            continue
+        w_f = total - w_b
+        if w_f == 0:
+            break
+        sum_b += t * hist[t]
+        m_b = sum_b / w_b
+        m_f = (sum_all - sum_b) / w_f
+        var_between = float(w_b) * float(w_f) * (m_b - m_f) ** 2
+        if var_between > max_var:
+            max_var = var_between
+            best_t = t
+    return best_t
+
+
+#: Tesseract config for title-block OCR. Matches the standalone prototype
+#: (``--oem 1 --psm 4``).
+TITLE_BLOCK_TESSERACT_CONFIG = "--oem 1 --psm 4"
 
 #: Cached "is tesseract available?" probe. ``None`` = not yet probed,
 #: ``True/False`` = result of the most recent probe. Reset by calling
@@ -123,7 +149,7 @@ def ocr_image_bytes(
     png_bytes: bytes,
     *,
     lang: str = "eng",
-    preprocess: Literal["none", "title_block"] = "none",
+    preprocess: Literal["none", "title_block", "title_block_fixed"] = "none",
     tesseract_config: str | None = None,
 ) -> str:
     """OCR a PNG byte string and return the recognized text.
@@ -134,15 +160,18 @@ def ocr_image_bytes(
     * pytesseract import fails -> ``""``
     * Tesseract crashes on the input -> ``""`` (logged, not raised)
 
-    ``preprocess="title_block"`` mirrors the prototype OCR path in
-    ``AI/controller/title.py``: convert to grayscale, then apply a fixed
-    binary threshold at :data:`TITLE_BLOCK_THRESHOLD`. This boosts contrast
-    on tinted / hatched title-block backgrounds where the default
-    PIL-passthrough route under-recognizes characters.
+    ``preprocess="title_block"`` converts to grayscale, applies **Otsu's**
+    automatic global threshold (same idea as ``cv2.THRESH_OTSU`` in the
+    standalone prototype, implemented without OpenCV/NumPy), then binarizes
+    to black-on-white for Tesseract. This adapts to tinted / hatched
+    backgrounds better than the legacy fixed cutoff at :data:`TITLE_BLOCK_THRESHOLD`.
+
+    ``preprocess="title_block_fixed"`` (rarely used) keeps the historical fixed
+    threshold at :data:`TITLE_BLOCK_THRESHOLD` for debugging regressions.
 
     ``tesseract_config`` is forwarded to ``pytesseract.image_to_string``;
     callers that want the title-block preset can pass
-    :data:`TITLE_BLOCK_TESSERACT_CONFIG` (PSM 6 / OEM 3).
+    :data:`TITLE_BLOCK_TESSERACT_CONFIG` (PSM 4 / OEM 1).
 
     The caller is responsible for any post-processing (whitespace normalize,
     line-break collapse). ``backend.app.utils.pdf._normalize_title_text``
@@ -168,19 +197,19 @@ def ocr_image_bytes(
 
     if preprocess == "title_block":
         try:
-            # ``"L"`` = 8-bit grayscale; ``point`` applies a per-pixel
-            # threshold without a NumPy/OpenCV dependency. The lambda
-            # returns 0 for dim pixels, 255 for ink -- exactly the binary
-            # output ``cv2.threshold(..., 150, 255, THRESH_BINARY)`` produces
-            # in the prototype.
+            gray = img.convert("L")
+            thresh = _otsu_threshold_from_histogram(gray.histogram())
+            img = gray.point(lambda px, t=thresh: 255 if px > t else 0, mode="1")
+        except Exception:
+            logger.exception("OCR: title_block preprocess failed; using raw image")
+    elif preprocess == "title_block_fixed":
+        try:
             img = img.convert("L").point(
                 lambda px, t=TITLE_BLOCK_THRESHOLD: 255 if px > t else 0,
                 mode="1",
             )
         except Exception:
-            # Preprocessing is best-effort -- fall through to OCR on the
-            # original image rather than fail the whole extraction.
-            logger.exception("OCR: title_block preprocess failed; using raw image")
+            logger.exception("OCR: title_block_fixed preprocess failed; using raw image")
 
     kwargs: dict[str, Any] = {"lang": lang}
     if tesseract_config:

@@ -34,6 +34,12 @@ class Sheet(Base):
     )
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
     sheet_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: Drawing identifier extracted from the title block (e.g. ``"A101"``,
+    #: ``"G1.1"``, ``"S-100"``, ``"D101"``). Populated by the AI-02b auto-name
+    #: flow alongside ``sheet_name``. Guarded by the same ``sheet_name_source``
+    #: flag -- a manual rename of either field marks the row ``'manual'`` and
+    #: protects both columns from re-extract.
+    sheet_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
     #: ``'auto'`` (extracted at upload or by AI Stage 1) | ``'manual'`` (user
     #: rename) | ``NULL`` (legacy; treated as ``'auto'``). Re-extract paths
     #: skip rows where this is ``'manual'`` so user edits are never clobbered.

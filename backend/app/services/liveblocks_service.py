@@ -14,7 +14,9 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 LIVEBLOCKS_AUTHORIZE_URL = "https://api.liveblocks.io/v2/authorize-user"
-LIVEBLOCKS_BROADCAST_URL_FMT = "https://api.liveblocks.io/v2/rooms/{room_id}/broadcast-event"
+# OpenAPI path is ``/rooms/{roomId}/broadcast_event`` (underscore) -- the
+# hyphenated ``broadcast-event`` URL returns 404 NOT_FOUND from the API.
+LIVEBLOCKS_BROADCAST_URL_FMT = "https://api.liveblocks.io/v2/rooms/{room_id}/broadcast_event"
 
 # contruo:{org_uuid}:{project_uuid}
 _ROOM_RE = re.compile(

@@ -130,25 +130,30 @@ def with_cost_tracking(call_label: str) -> Iterator[CostRecord]:
                 record.cost_cents,
                 record.tokens_used,
             )
-            return
-        if record.cost_cents == 0 and record.tokens_used == 0:
-            return
-        try:
-            with factory() as session:  # type: Session
-                session.execute(
-                    update(AiRun)
-                    .where(AiRun.id == ai_run_id)
-                    .values(
-                        cost_cents=AiRun.cost_cents + record.cost_cents,
-                        tokens_used=AiRun.tokens_used + record.tokens_used,
+        elif record.cost_cents == 0 and record.tokens_used == 0:
+            pass
+        else:
+            try:
+                with factory() as session:  # type: Session
+                    session.execute(
+                        update(AiRun)
+                        .where(AiRun.id == ai_run_id)
+                        .values(
+                            cost_cents=AiRun.cost_cents + record.cost_cents,
+                            tokens_used=AiRun.tokens_used + record.tokens_used,
+                        )
                     )
+                    session.commit()
+            except Exception:
+                # Cost telemetry must never block the pipeline.
+                logger.exception(
+                    "Failed to write cost for run %s (label=%s)", ai_run_id, call_label
                 )
-                session.commit()
-        except Exception:
-            # Cost telemetry must never block the pipeline.
-            logger.exception(
-                "Failed to write cost for run %s (label=%s)", ai_run_id, call_label
-            )
+        # Never ``return`` from this ``finally`` -- a bare return in a
+        # ``@contextmanager`` generator's ``finally`` suppresses exceptions
+        # raised inside the ``with`` body (PEP 479 / contextlib semantics), which
+        # left callers like ``OpenAILLMModel.structured_output`` executing past
+        # a failed API call with ``response`` never assigned.
 
 
 # ─── Protocols ───────────────────────────────────────────────────────────────
@@ -449,6 +454,159 @@ class OpenAIEmbeddingModel:
             )
 
 
+class OpenAILLMModel:
+    """OpenAI text-only LLM (Sprint AI-02b: title-block field extraction).
+
+    Wraps ``client.chat.completions.create`` with strict JSON-schema response
+    formatting. Used today only by the title-block parser to clean up
+    low-confidence heuristic output -- a 2-field schema where strict JSON
+    enforcement removes a class of "model returned prose around the JSON"
+    failure modes that the Anthropic path would have to defensively parse.
+
+    Cost is recorded via ``with_cost_tracking`` against the active
+    ``ai_runs`` row when one is bound; standalone callers (e.g. the
+    ``reextract_plan_titles_task`` which has no ai_run) emit a debug log
+    only -- attribution is to the task, not a run.
+    """
+
+    def __init__(
+        self,
+        model_id: str,
+        api_key: str,
+        *,
+        timeout_s: float = 20.0,
+        max_retries: int = 2,
+    ) -> None:
+        self.model_id = model_id
+        self._api_key = api_key
+        self._timeout_s = timeout_s
+        self._max_retries = max_retries
+        self._client: Any | None = None  # lazy
+
+    def _ensure_configured(self) -> None:
+        if not self._api_key:
+            raise RuntimeError(
+                "OPENAI_API_KEY is not configured -- OpenAI LLM calls will fail"
+            )
+
+    def _get_client(self) -> Any:
+        """Lazy SDK import + per-instance singleton.
+
+        Tests can monkeypatch ``app.services.ai_models.OpenAI`` (after the
+        first call brings it into the module namespace) or substitute the
+        whole instance via ``get_title_block_llm`` injection.
+        """
+        if self._client is not None:
+            return self._client
+        try:
+            from openai import OpenAI  # type: ignore[import-untyped]
+        except ImportError as exc:  # pragma: no cover -- declared in requirements.txt
+            raise RuntimeError(
+                "openai SDK is not installed; pip install openai"
+            ) from exc
+        self._client = OpenAI(
+            api_key=self._api_key,
+            timeout=self._timeout_s,
+            max_retries=self._max_retries,
+        )
+        return self._client
+
+    def summarize(self, text: str, *, max_chars: int) -> str:
+        """Not used by AI-02b. Kept for protocol compatibility (AI-04 will wire)."""
+        self._ensure_configured()
+        with with_cost_tracking("openai_llm.summarize"):
+            raise NotImplementedError(
+                "OpenAILLMModel.summarize will be wired in Sprint AI-04"
+            )
+
+    def structured_output(
+        self, prompt: str, *, schema: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Call ``chat.completions.create`` with strict JSON-schema enforcement.
+
+        ``prompt`` is sent as a single ``user`` message; an internal system
+        message anchors the model to the structured-extraction task. ``schema``
+        must be a valid JSON Schema fragment compatible with OpenAI's strict
+        mode (``additionalProperties: false`` and every property in
+        ``required``). The schema name is derived from the schema dict's
+        ``title`` field if present, else a stable fallback.
+        """
+        self._ensure_configured()
+        if not prompt or not prompt.strip():
+            return {}
+
+        # ── Phase 1: API call inside cost-tracking. ──────────────────────
+        # Record usage here; parse JSON outside so cost bookkeeping stays
+        # separate from validation errors. ``with_cost_tracking`` must never
+        # suppress exceptions from the wrapped body (see its ``finally``).
+        with with_cost_tracking("openai_llm.structured_output") as cost:
+            client = self._get_client()
+            schema_name = str(schema.get("title") or "structured_output")
+            response = client.chat.completions.create(
+                model=self.model_id,
+                temperature=0,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": schema_name,
+                        "strict": True,
+                        "schema": schema,
+                    },
+                },
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You extract metadata from construction drawing title blocks. "
+                            "The input is OCR text and may contain garbage characters or notes from "
+                            "outside the title block. Return only the requested fields."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            )
+
+            usage = getattr(response, "usage", None)
+            input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+            output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+            settings = get_settings()
+            input_cents = (
+                input_tokens / 1000.0 * settings.ai_openai_llm_input_per_1k_cents
+            )
+            output_cents = (
+                output_tokens / 1000.0 * settings.ai_openai_llm_output_per_1k_cents
+            )
+            cost.cost_cents = _round_up_cents(input_cents + output_cents)
+            cost.tokens_used = input_tokens + output_tokens
+            cost.metadata = {
+                "model_id": self.model_id,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+
+        # ── Phase 2: validation + parsing (outside cost block). ──────────
+        choices = getattr(response, "choices", None) or []
+        if not choices:
+            raise RuntimeError(
+                "OpenAILLMModel.structured_output: empty choices in response"
+            )
+        message = getattr(choices[0], "message", None)
+        content = getattr(message, "content", None) if message else None
+        if not content:
+            raise RuntimeError(
+                "OpenAILLMModel.structured_output: empty message content"
+            )
+        try:
+            return json.loads(_strip_code_fences(content))
+        except json.JSONDecodeError as exc:
+            # Strict mode SHOULD prevent this; defensive parse keeps the
+            # caller from crashing a re-extract on a transient model glitch.
+            raise RuntimeError(
+                "OpenAILLMModel.structured_output: response was not JSON: "
+                f"{content[:200]}"
+            ) from exc
+
+
 # ─── Factories ───────────────────────────────────────────────────────────────
 
 
@@ -460,6 +618,7 @@ _EMBEDDING_PROVIDERS: dict[str, type] = {
 }
 _LLM_PROVIDERS: dict[str, type] = {
     "anthropic": AnthropicLLMModel,
+    "openai": OpenAILLMModel,
 }
 
 
@@ -471,6 +630,17 @@ def _resolve(name: str, provider: str, table: dict[str, type]) -> type:
             f"Unknown {name} provider '{provider}' (configured providers: {valid})"
         )
     return cls
+
+
+def _api_key_for_provider(provider: str) -> str:
+    """Map an LLM provider name to the configured API key."""
+    settings = get_settings()
+    p = provider.lower()
+    if p == "openai":
+        return settings.openai_api_key
+    if p == "anthropic":
+        return settings.anthropic_api_key
+    return ""
 
 
 def get_vision_model() -> VisionModel:
@@ -488,7 +658,37 @@ def get_embedding_model() -> EmbeddingModel:
 def get_llm_model() -> LLMModel:
     settings = get_settings()
     cls = _resolve("llm", settings.ai_llm_provider, _LLM_PROVIDERS)
-    return cls(model_id=settings.ai_llm_model, api_key=settings.anthropic_api_key)
+    return cls(
+        model_id=settings.ai_llm_model,
+        api_key=_api_key_for_provider(settings.ai_llm_provider),
+    )
+
+
+def get_title_block_llm() -> LLMModel:
+    """Dedicated LLM for the title-block cleanup pass (Sprint AI-02b).
+
+    Decoupled from ``get_llm_model`` so the global LLM provider can stay
+    Anthropic for AI-04+ work while title-block parsing uses OpenAI's strict
+    JSON-schema mode -- the right tool for a small, well-typed extraction
+    schema where prose-stripping fallbacks are an unnecessary failure surface.
+
+    Honors the ``ai_title_block_llm_provider`` / ``ai_title_block_llm_model``
+    settings; flipping to Anthropic here is a config change with no code
+    impact (``AnthropicLLMModel.structured_output`` will need to be wired
+    when AI-04 lands, but is a stub today).
+    """
+    settings = get_settings()
+    provider = settings.ai_title_block_llm_provider
+    cls = _resolve("title_block_llm", provider, _LLM_PROVIDERS)
+    api_key = _api_key_for_provider(provider)
+    if cls is OpenAILLMModel:
+        return cls(  # type: ignore[return-value]
+            model_id=settings.ai_title_block_llm_model,
+            api_key=api_key,
+            timeout_s=settings.ai_openai_llm_timeout_s,
+            max_retries=settings.ai_openai_llm_max_retries,
+        )
+    return cls(model_id=settings.ai_title_block_llm_model, api_key=api_key)
 
 
 def model_versions_snapshot() -> dict[str, str]:

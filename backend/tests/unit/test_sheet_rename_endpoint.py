@@ -79,6 +79,7 @@ def _make_sheet(*, sheet_name: str, source: str | None = "manual") -> MagicMock:
     sheet.project_id = uuid.uuid4()
     sheet.page_number = 1
     sheet.sheet_name = sheet_name
+    sheet.sheet_number = None
     sheet.sheet_name_source = source
     sheet.scale_value = None
     sheet.scale_unit = None

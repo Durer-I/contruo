@@ -54,6 +54,8 @@ The `ai_pipeline` queue is isolated so heavy AI workloads don't starve PDF proce
 
 ### AI Auto-Takeoff (Sprint AI-01 + AI-02)
 
+The worker runs best-effort title-block auto-name on the plan immediately before the counted pipeline stages (same path as Auto-name sheets; failures are logged and the run still proceeds when `AI_AUTO_NAME_ENABLED` is on).
+
 Provider selection is a config swap, not a code change. Defaults are the provider+model the AI track was designed against; override per environment.
 
 | Variable | Default | Notes |
@@ -82,6 +84,26 @@ Provider selection is a config swap, not a code change. Defaults are the provide
 OCR is local CPU and does **not** count against the spend cap. Vision calls are tracked via `with_cost_tracking` and billed against the active `ai_runs` row.
 
 See [docs/architecture/ai-pipeline.md](../docs/architecture/ai-pipeline.md) for how the providers are wired and how cost attribution works.
+
+#### AI-02b (auto-name sheets)
+
+The "Auto-name sheets" button in the plan viewer runs a standalone Celery task (`ai_pipeline.reextract_plan_titles`) that reads each sheet's title-block region, extracts `sheet_name` + `sheet_number`, and writes them back. Manual renames (`sheets.sheet_name_source = 'manual'`) are always preserved.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `AI_AUTO_NAME_ENABLED` | `true` | Master kill-switch. `false` makes the API endpoint return `503 AUTO_NAME_DISABLED` and the frontend hides the button. |
+| `AI_TITLE_BLOCK_BOX_WIDTH_PTS` | `350.0` | Width (PDF user-space points) of the bottom-right corner box scanned for title-block text. |
+| `AI_TITLE_BLOCK_BOX_HEIGHT_PTS` | `350.0` | Height of that corner box. |
+| `AI_TITLE_BLOCK_CLIP_DPI` | `200` | DPI for the OCR-fallback render. 200 is the sweet spot for the 6-8pt fonts typical of title blocks. |
+| `AI_TITLE_BLOCK_LLM_MIN_CONFIDENCE` | `0.7` | Heuristic confidence below this (or any null field) escalates to the LLM cleanup pass. |
+| `AI_TITLE_BLOCK_LLM_PROVIDER` | `openai` | Decoupled from `AI_LLM_PROVIDER`; the title-block parser uses OpenAI strict-JSON mode regardless of the global LLM choice. |
+| `AI_TITLE_BLOCK_LLM_MODEL` | `gpt-4o-mini` | OpenAI model id for the cleanup pass. |
+| `AI_OPENAI_LLM_INPUT_PER_1K_CENTS` | `0.015` | Per-1K-input-token cost (cents) for OpenAI LLM cost telemetry. |
+| `AI_OPENAI_LLM_OUTPUT_PER_1K_CENTS` | `0.06` | Per-1K-output-token cost. |
+| `AI_OPENAI_LLM_TIMEOUT_S` | `20.0` | Per-call hard timeout. |
+| `AI_OPENAI_LLM_MAX_RETRIES` | `2` | SDK-level retries on transient OpenAI errors. |
+
+**`OPENAI_API_KEY` is required on the worker process** (not just the API process) when the title-block LLM pass is enabled with the `openai` provider. The key is read lazily on first call, so an unset key produces a clean per-sheet `llm_failed` counter rather than crashing the task -- the heuristic answer is still written.
 
 ---
 

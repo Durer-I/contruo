@@ -123,7 +123,7 @@ def test_record_stage_timing_accepts_canonical_stage():
     ai_run_service.record_stage_timing_sync(
         session,
         ai_run_id=uuid.uuid4(),
-        stage="title_block",
+        stage="classification",
         duration_ms=10,
         cache_hit=False,
         started_at=now,

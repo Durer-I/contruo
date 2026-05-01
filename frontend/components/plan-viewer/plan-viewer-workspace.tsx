@@ -76,6 +76,7 @@ import {
   type SheetStripMode,
 } from "@/components/plan-viewer/sheet-index";
 import { useActiveAiRun, type AiRunStatusBroadcast } from "@/lib/ai-runs";
+import { autoNameSheets } from "@/lib/sheets";
 import { ScaleCalibrationDialog } from "@/components/plan-viewer/scale-calibration-dialog";
 import { ScaleIntroDialog } from "@/components/plan-viewer/scale-intro-dialog";
 import { PlanSearchPanel } from "@/components/plan-viewer/plan-search-panel";
@@ -109,6 +110,45 @@ import {
   realAreaFromPdfSq,
 } from "@/lib/area-geometry";
 
+/** Detect when auto-name / discipline writes landed by comparing list payload (not React props timing). */
+function planSheetsFingerprint(rows: SheetInfo[], planId: string): string {
+  return rows
+    .filter((s) => s.plan_id === planId)
+    .map(
+      (s) =>
+        `${s.id}:${s.sheet_name ?? ""}:${s.sheet_number ?? ""}:${s.discipline ?? ""}:${s.sheet_name_source ?? ""}`
+    )
+    .sort()
+    .join("|");
+}
+
+/** Liveblocks may deliver REST broadcasts as `{ type, data }` or a flat `{ type, plan_id }`. */
+function parseSheetsAutoNamedPlanId(event: unknown): string | null {
+  if (!event || typeof event !== "object") return null;
+  const e = event as Record<string, unknown>;
+
+  if (e.type === "sheets.auto_named") {
+    if (e.data && typeof e.data === "object") {
+      const pid = (e.data as Record<string, unknown>).plan_id;
+      if (typeof pid === "string") return pid;
+    }
+    if (typeof e.plan_id === "string") return e.plan_id;
+    return null;
+  }
+
+  // Some clients surface only the REST `data` object (no outer `type`).
+  if (
+    typeof e.plan_id === "string" &&
+    typeof e.duration_ms === "number" &&
+    e.counters !== undefined &&
+    typeof e.counters === "object"
+  ) {
+    return e.plan_id;
+  }
+
+  return null;
+}
+
 interface PlanViewerWorkspaceProps {
   projectId: string;
   projectName: string;
@@ -117,7 +157,7 @@ interface PlanViewerWorkspaceProps {
   onActivePlanChange: (planId: string) => void;
   /** All sheets in the project (filtered to `activePlanId` for the index + viewer). */
   sheets: SheetInfo[];
-  onSheetsRefresh: () => Promise<void>;
+  onSheetsRefresh: () => Promise<SheetInfo[] | undefined>;
   /** Parent silent refetch in progress (e.g. after saving scale). */
   sheetsRefreshing?: boolean;
   canEditMeasurements: boolean;
@@ -156,6 +196,9 @@ export function PlanViewerWorkspace({
   canManageConditions,
   canExport = false,
 }: PlanViewerWorkspaceProps) {
+  const sheetsRef = useRef(sheets);
+  sheetsRef.current = sheets;
+
   const canvasRef = useRef<PlanPdfCanvasHandle>(null);
   const skipSheetResetOnPlanChangeRef = useRef(false);
   const { setTakeoffSlot } = useTakeoffToolbarSlot();
@@ -272,7 +315,13 @@ export function PlanViewerWorkspace({
   );
 
   const planSheetsIdKey = useMemo(
-    () => `${activePlanId}:${planSheets.map((s) => s.id).join(",")}`,
+    () =>
+      `${activePlanId}:${planSheets
+        .map(
+          (s) =>
+            `${s.id}:${s.sheet_name ?? ""}:${s.sheet_number ?? ""}:${s.discipline ?? ""}`
+        )
+        .join(",")}`,
     [activePlanId, planSheets]
   );
 
@@ -280,6 +329,102 @@ export function PlanViewerWorkspace({
   const [sheetThumbUrls, setSheetThumbUrls] = useState<Record<string, string | null>>({});
   const [sheetThumbsLoading, setSheetThumbsLoading] = useState(false);
   const sheetThumbsLoadedForKeyRef = useRef<string>("");
+
+  /** Celery completion: Liveblocks `sheets.auto_named` and/or fingerprint polling. */
+  const pendingAutoNamePlanIdRef = useRef<string | null>(null);
+  const autoNameAbortRef = useRef(false);
+  const completeAutoNameFinishRef = useRef<(() => void) | null>(null);
+  const onSheetsRefreshRef = useRef(onSheetsRefresh);
+  useEffect(() => {
+    onSheetsRefreshRef.current = onSheetsRefresh;
+  }, [onSheetsRefresh]);
+
+  const [autoNameInProgress, setAutoNameInProgress] = useState(false);
+  const handleAutoNameSheets = useCallback(
+    async (opts?: { overwriteManual?: boolean }) => {
+      if (!activePlanId || autoNameInProgress) return;
+      const planId = activePlanId;
+      setAutoNameInProgress(true);
+
+      const beforeFp = planSheetsFingerprint(sheetsRef.current, planId);
+
+      try {
+        await autoNameSheets(projectId, planId, {
+          overwriteManual: opts?.overwriteManual === true,
+        });
+      } catch (err) {
+        const message =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : "Failed to auto-name sheets";
+        toast.error(message);
+        setAutoNameInProgress(false);
+        return;
+      }
+
+      toast.info("Auto-naming sheets…");
+
+      autoNameAbortRef.current = false;
+      pendingAutoNamePlanIdRef.current = planId;
+
+      /** Last refresh before closing spinner so the sheet strip shows new names. */
+      const finishSuccess = () => {
+        if (autoNameAbortRef.current) return;
+        autoNameAbortRef.current = true;
+        pendingAutoNamePlanIdRef.current = null;
+        completeAutoNameFinishRef.current = null;
+        void (async () => {
+          try {
+            await onSheetsRefresh();
+          } catch {
+            /* parent surfaces fetch errors */
+          }
+          setAutoNameInProgress(false);
+          toast.success("Sheet names updated");
+        })();
+      };
+
+      completeAutoNameFinishRef.current = finishSuccess;
+
+      const POLL_MS = 2000;
+      const MAX_WAIT_MS = 120_000;
+      const deadline = Date.now() + MAX_WAIT_MS;
+
+      while (!autoNameAbortRef.current && Date.now() < deadline) {
+        let rows: SheetInfo[];
+        try {
+          const fetched = await onSheetsRefresh();
+          rows = fetched ?? sheetsRef.current;
+        } catch {
+          rows = sheetsRef.current;
+        }
+        if (planSheetsFingerprint(rows, planId) !== beforeFp) {
+          finishSuccess();
+          break;
+        }
+        if (autoNameAbortRef.current) break;
+        await new Promise((r) => setTimeout(r, POLL_MS));
+      }
+
+      if (!autoNameAbortRef.current && pendingAutoNamePlanIdRef.current === planId) {
+        pendingAutoNamePlanIdRef.current = null;
+        completeAutoNameFinishRef.current = null;
+        autoNameAbortRef.current = true;
+        try {
+          await onSheetsRefresh();
+        } catch {
+          /* ignore */
+        }
+        setAutoNameInProgress(false);
+        toast.warning(
+          "Auto-name may still be running. The sheet list was refreshed — check again in a moment."
+        );
+      }
+    },
+    [activePlanId, autoNameInProgress, projectId, onSheetsRefresh]
+  );
 
   useEffect(() => {
     setSheetThumbUrls({});
@@ -543,6 +688,16 @@ export function PlanViewerWorkspace({
     const ev = event as
       | CollaborationBroadcastEvent
       | { type: "ai_run.status_changed"; data: AiRunStatusBroadcast };
+    const autoNamedPlanId = parseSheetsAutoNamedPlanId(event);
+    if (autoNamedPlanId) {
+      const pid = autoNamedPlanId;
+      void onSheetsRefreshRef.current().finally(() => {
+        if (pendingAutoNamePlanIdRef.current === pid) {
+          completeAutoNameFinishRef.current?.();
+        }
+      });
+      return;
+    }
     if (ev.type === "contruo.measurements_changed") {
       // Debounce so bursts of edits from collaborators collapse to one refetch.
       scheduleMeasurementsResyncRef.current();
@@ -2098,6 +2253,9 @@ export function PlanViewerWorkspace({
               // sheet-index.tsx keeps the row from flashing.
               void onSheetsRefresh();
             }}
+            onAutoName={handleAutoNameSheets}
+            autoNameInProgress={autoNameInProgress}
+            canAutoName={canEditMeasurements}
           />
         </Panel>
 
@@ -2164,14 +2322,15 @@ export function PlanViewerWorkspace({
           </div>
 
           {sheetsRefreshing && (
-            <div
-              className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5 text-xs text-foreground"
-              role="status"
-              aria-live="polite"
-            >
-              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-foreground" aria-hidden />
-              <span>Updating sheet data…</span>
-            </div>
+            <></>
+            // <div
+            //   className="flex shrink-0 items-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5 text-xs text-foreground"
+            //   role="status"
+            //   aria-live="polite"
+            // >
+            //   <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-foreground" aria-hidden />
+            //   <span>Updating sheet data…</span>
+            // </div>
           )}
 
           {needsScaleWarning && (

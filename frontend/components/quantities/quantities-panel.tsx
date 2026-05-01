@@ -77,8 +77,18 @@ type FlatRow =
       depth: 3;
     };
 
+/** Drawing-style id for the tree row (e.g. A101). Falls back to PDF page index. */
 function sheetLabel(sheet: SheetInfo): string {
-  return sheet.sheet_name ?? `Page ${sheet.page_number}`;
+  const num = sheet.sheet_number?.trim();
+  if (num) return num;
+  return `Page ${sheet.page_number}`;
+}
+
+function sheetLabelTitle(sheet: SheetInfo): string | undefined {
+  const name = sheet.sheet_name?.trim();
+  if (!name) return undefined;
+  if (name === sheetLabel(sheet)) return undefined;
+  return name;
 }
 
 function aggregateAssemblyTotals(
@@ -534,7 +544,10 @@ export const QuantitiesPanel = forwardRef<QuantitiesPanelHandle, QuantitiesPanel
                         <ChevronRight className="h-3 w-3" />
                       )}
                     </button>
-                    <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                    <span
+                      className="min-w-0 flex-1 truncate text-muted-foreground"
+                      title={sheetLabelTitle(row.sheet)}
+                    >
                       {sheetLabel(row.sheet)}
                     </span>
                     <span className="shrink-0 font-mono text-[10px] text-muted-foreground">

@@ -52,13 +52,21 @@ def _build_limiter() -> Limiter:
         storage_uri=storage_uri,
         default_limits=["300/minute"],
         headers_enabled=True,
+        # When Redis is unreachable (DNS, firewall, etc.), SlowAPI otherwise raises
+        # ConnectionError; SlowAPIMiddleware maps unknown exceptions to the default
+        # RateLimitExceeded handler and crashes on ``exc.detail``. Fallback keeps
+        # limiting on per-process memory until Redis recovers.
+        in_memory_fallback_enabled=bool(storage_uri),
     )
 
 
 limiter: Limiter = _build_limiter()
 
 
-async def _rate_limit_exceeded_handler(_request: Request, exc: RateLimitExceeded) -> JSONResponse:
+def _rate_limit_exceeded_handler(_request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    """Must be synchronous: SlowAPIMiddleware uses sync_check_limits and replaces
+    async exception handlers with SlowAPI's default (which assumes RateLimitExceeded).
+    """
     return JSONResponse(
         status_code=429,
         content={

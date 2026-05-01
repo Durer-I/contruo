@@ -1,18 +1,22 @@
 """AI Auto-Takeoff Celery pipeline (Sprint AI-01 scaffolding).
 
-Six chained tasks model the full pipeline:
+Chained tasks model the pipeline (see ``ai_run_service.PIPELINE_STAGES``):
 
+0. ``ai_pipeline.pipeline_prep_auto_name`` -- best-effort title-block auto-name
+   (same work as ``reextract_plan_titles``); failures are logged and do not stop
+   the chain. Skipped when ``ai_auto_name_enabled`` is off.
 1. ``ai_pipeline.start_ai_run`` -- transition queued -> running, acquire the
-   per-plan advisory lock, broadcast the status change, hand off to stage 1.
-2. ``ai_pipeline.stage_title_block`` -- AI-02b will populate. Today: no-op
-   pass-through (the title-block work was reset for AI-02b; see
-   ``sprints/ai/sprint-ai-02b.md``).
-3. ``ai_pipeline.stage_classification`` -- AI-02.
-4. ``ai_pipeline.stage_schedules_legends`` -- AI-03.
-5. ``ai_pipeline.stage_element_detection`` -- AI-06/AI-07/AI-08.
-6. ``ai_pipeline.stage_resolver_and_layer_write`` -- AI-04/AI-05.
-7. ``ai_pipeline.finalize_ai_run`` -- transition to completed/failed, release
+   per-plan advisory lock, broadcast the status change.
+2. ``ai_pipeline.stage_classification`` -- AI-02 (sheet classification).
+3. ``ai_pipeline.stage_schedules_legends`` -- AI-03.
+4. ``ai_pipeline.stage_element_detection`` -- AI-06/AI-07/AI-08.
+5. ``ai_pipeline.stage_resolver_and_layer_write`` -- AI-04/AI-05.
+6. ``ai_pipeline.finalize_ai_run`` -- transition to completed/failed, release
    lock, broadcast final status.
+
+Standalone ``POST .../auto-name-sheets`` still queues ``reextract_plan_titles``
+directly; the prep step reuses that task synchronously so sheet names are fresh
+before classification without adding a counted ``PIPELINE_STAGES`` stage.
 
 Each stage:
 
@@ -24,8 +28,8 @@ Each stage:
   lock, and stops the chain (subsequent stages see the failed state and skip).
 
 In AI-01 every stage body is intentionally empty -- the framework runs end to
-end and emits a clean six-stage summary, but no detection happens. AI-02+ will
-fill in each ``_run_<stage>`` body without touching the chain wiring.
+end and emits a clean multi-stage summary, but no detection happens. AI-02+
+fill in each ``_stage_*_body`` without touching the chain ordering.
 """
 
 from __future__ import annotations
@@ -50,6 +54,7 @@ from app.services import (
     ai_models,
     ai_run_service,
     ai_sheet_classifier,
+    ai_title_block,
     liveblocks_service,
 )
 from app.tasks.celery_app import celery_app
@@ -408,23 +413,13 @@ def _noop_stage(_session: Session, _run: AiRun, _plan: Plan) -> dict[str, Any]:
     return {"cache_hit": False}
 
 
-# ─── AI-02b: Stage 1 (title block) body — placeholder ──────────────────────
-#
-# The auto-detection + manual-bbox flow shipped in AI-02 was reset so AI-02b
-# can take a fresh swing at it. Until then, Stage 1 runs as a no-op and the
-# pipeline proceeds straight into Stage 2 classification (which keys off
-# ``sheets.sheet_name``, so missing titles just degrade lexical confidence
-# without breaking the run). See ``sprints/ai/sprint-ai-02b.md`` for the
-# replacement spec.
-
-
-# ─── AI-02: Stage 2 (sheet classification) body ───────────────────────────────
+# ─── AI-02: Stage classification body ───────────────────────────────────────
 
 
 def _stage_classification_body(
     session: Session, run: AiRun, plan: Plan
 ) -> dict[str, Any]:
-    """Stage 2: lexical-first / vision-fallback classification of every sheet.
+    """Sheet classification: lexical-first / vision-fallback for every sheet.
 
     Cache key is per-sheet content hash + ``SHEET_CLASSIFY_VERSION``. A re-run
     on unchanged sheets reads from cache (zero cost). Vision is invoked only
@@ -621,17 +616,6 @@ def _stage_classification_body(
     return {"cache_hit": cache_hits == len(sheets)}
 
 
-@celery_app.task(name="ai_pipeline.stage_title_block", bind=True, acks_late=True)
-def stage_title_block(self, ai_run_id_str: str) -> str:
-    # Title-block work was reset for AI-02b -- this stage runs as a no-op
-    # so the chain still walks all six stages. See sprint-ai-02b.md.
-    return _run_stage(
-        ai_run_id_str=ai_run_id_str,
-        stage="title_block",
-        body=_noop_stage,
-    )
-
-
 @celery_app.task(name="ai_pipeline.stage_classification", bind=True, acks_late=True)
 def stage_classification(self, ai_run_id_str: str) -> str:
     return _run_stage(
@@ -749,24 +733,220 @@ def finalize_ai_run(self, ai_run_id_str: str) -> str:
         raise
 
 
+# ─── Pipeline prep: best-effort auto-name before ``start_ai_run`` ────────────
+
+
+@celery_app.task(
+    name="ai_pipeline.pipeline_prep_auto_name",
+    bind=True,
+    acks_late=True,
+)
+def pipeline_prep_auto_name(self, plan_id_str: str) -> str:
+    """Run title-block auto-name before the pipeline; never raises to the chain."""
+    settings = get_settings()
+    if not settings.ai_auto_name_enabled:
+        return "prep_auto_name_skipped"
+    try:
+        reextract_plan_titles_task.run(plan_id_str, False)
+    except Exception:
+        logger.exception(
+            "pipeline_prep_auto_name: suppressed failure plan_id=%s", plan_id_str
+        )
+    return "prep_auto_name_ok"
+
+
 # ─── Public chain builder ────────────────────────────────────────────────────
 
 
-def build_pipeline_chain(ai_run_id: uuid.UUID):
+def build_pipeline_chain(ai_run_id: uuid.UUID, plan_id: uuid.UUID):
     """Construct the Celery chain for an AI run.
 
-    Use ``build_pipeline_chain(run_id).apply_async()`` from the API handler to
-    enqueue. Chain ordering matches ``PIPELINE_STAGES``.
+    Prep runs best-effort auto-name for ``plan_id`` before ``start_ai_run``.
+    ``start_ai_run`` uses an immutable signature (``.si()``) so it still receives
+    ``ai_run_id`` after prep returns a dummy string.
+
+    Use ``build_pipeline_chain(run.id, run.plan_id).apply_async()`` from the API
+    handler after commit. Recorded ``PIPELINE_STAGES`` / UI stage count unchanged.
     """
     s = str(ai_run_id)
+    p = str(plan_id)
     return chain(
-        start_ai_run.s(s),
-        stage_title_block.s(),
+        pipeline_prep_auto_name.s(p),
+        start_ai_run.si(s),
         stage_classification.s(),
         stage_schedules_legends.s(),
         stage_element_detection.s(),
         stage_resolver_and_layer_write.s(),
         finalize_ai_run.s(),
     )
+
+
+# ─── AI-02b: standalone auto-name-sheets task ────────────────────────────────
+
+
+#: Celery retry delay (seconds) when the per-plan advisory lock is busy.
+_AUTO_NAME_RETRY_DELAY_S = 5
+#: Max retries on lock-busy. With backoff this caps wait at ~1 minute total
+#: which is a reasonable bound: a typical re-extract finishes in <5s and any
+#: contention should resolve far inside that window.
+_AUTO_NAME_MAX_RETRIES = 5
+
+
+@celery_app.task(
+    name="ai_pipeline.reextract_plan_titles",
+    bind=True,
+    max_retries=_AUTO_NAME_MAX_RETRIES,
+    default_retry_delay=_AUTO_NAME_RETRY_DELAY_S,
+    acks_late=True,
+)
+def reextract_plan_titles_task(
+    self, plan_id_str: str, overwrite_manual: bool = False
+) -> dict[str, Any]:
+    """Re-extract ``sheet_name`` + ``sheet_number`` for every sheet in a plan.
+
+    Standalone task (NOT part of the AI Auto-Takeoff chain). Triggered by the
+    ``POST /projects/{pid}/plans/{plan_id}/auto-name-sheets`` endpoint. Holds
+    the same per-plan advisory lock the AI run uses, so an auto-name and an
+    AI run on the same plan can't race the sheets table.
+
+    On success: broadcasts ``sheets.auto_named`` into the project's
+    Liveblocks room with the per-method counters so connected clients can
+    refetch immediately. Polling in the workspace is the backstop.
+    """
+    plan_id = uuid.UUID(plan_id_str)
+    request_id_ctx.set(f"auto_name:{plan_id}")
+    started = datetime.now(timezone.utc)
+    perf_start = time.perf_counter()
+
+    settings = get_settings()
+    if not settings.ai_auto_name_enabled:
+        _log_ai_event(
+            logging.WARNING,
+            "auto_name_disabled",
+            plan_id=plan_id,
+        )
+        return {"plan_id": str(plan_id), "skipped": "feature_disabled"}
+
+    factory_token = ai_models.set_sync_session_factory(SyncSession)
+    try:
+        # Phase 1: load plan + acquire lock + download PDF.
+        with SyncSession() as session:
+            plan = session.get(Plan, plan_id)
+            if not plan:
+                raise RuntimeError(f"plan {plan_id} not found")
+            if plan.status != "ready":
+                _log_ai_event(
+                    logging.WARNING,
+                    "auto_name_plan_not_ready",
+                    plan_id=plan_id,
+                    status=plan.status,
+                )
+                return {"plan_id": str(plan_id), "skipped": "plan_not_ready"}
+
+            acquired = ai_run_service.acquire_sheet_lock_sync(
+                session, plan_id=plan_id, sheet_id=None
+            )
+            if not acquired:
+                _log_ai_event(
+                    logging.INFO,
+                    "auto_name_lock_busy_retrying",
+                    plan_id=plan_id,
+                    retry_count=self.request.retries,
+                )
+                # Celery will re-call us after default_retry_delay.
+                raise self.retry(exc=RuntimeError("plan lock busy"))
+
+            org_id = plan.org_id
+            project_id = plan.project_id
+            storage_path = plan.storage_path
+
+        try:
+            try:
+                pdf_bytes = storage.download_bytes(storage.PLANS_BUCKET, storage_path)
+            except Exception as exc:
+                _log_ai_failure(
+                    ai_run_id=f"plan:{plan_id}",
+                    stage="auto_name_download",
+                    error=exc,
+                )
+                raise
+
+            # Phase 2: per-sheet extraction + writes.
+            with SyncSession() as session:
+                plan = session.get(Plan, plan_id)
+                if not plan:
+                    raise RuntimeError(f"plan {plan_id} disappeared mid-task")
+                counters = ai_title_block.reextract_titles_for_plan(
+                    session,
+                    plan,
+                    pdf_bytes=pdf_bytes,
+                    overwrite_manual=overwrite_manual,
+                    llm_fallback=True,
+                )
+                session.commit()
+        finally:
+            # Always release the lock, even on failure inside the work block.
+            try:
+                with SyncSession() as session:
+                    ai_run_service.release_sheet_lock_sync(
+                        session, plan_id=plan_id, sheet_id=None
+                    )
+            except Exception:
+                logger.exception(
+                    "auto_name: release lock failed for plan=%s", plan_id
+                )
+
+        duration_ms = int((time.perf_counter() - perf_start) * 1000)
+        _log_ai_event(
+            logging.INFO,
+            "auto_name_completed",
+            plan_id=plan_id,
+            duration_ms=duration_ms,
+            **{f"counter_{k}": v for k, v in counters.as_summary().items() if isinstance(v, int)},
+        )
+
+        # Phase 3: broadcast for client refetch. Non-fatal on failure.
+        try:
+            room = liveblocks_service.collaboration_room_id(org_id, project_id)
+            liveblocks_service.broadcast_event_sync(
+                room_id=room,
+                event_type="sheets.auto_named",
+                data={
+                    "plan_id": str(plan_id),
+                    "duration_ms": duration_ms,
+                    "counters": counters.as_summary(),
+                },
+            )
+        except Exception:
+            logger.exception(
+                "auto_name: broadcast failed plan=%s (non-fatal)", plan_id
+            )
+
+        return {
+            "plan_id": str(plan_id),
+            "duration_ms": duration_ms,
+            "started_at": started.isoformat(),
+            "counters": counters.as_summary(),
+        }
+    except Exception as exc:
+        # ``self.retry`` raises Retry, which we want to propagate untouched.
+        from celery.exceptions import Retry  # local import keeps top-of-file lean
+
+        if isinstance(exc, Retry):
+            raise
+        _log_ai_failure(ai_run_id=f"plan:{plan_id}", stage="auto_name", error=exc)
+        # Best-effort lock release if we crashed before the finally block ran.
+        try:
+            with SyncSession() as session:
+                ai_run_service.release_sheet_lock_sync(
+                    session, plan_id=plan_id, sheet_id=None
+                )
+        except Exception:
+            logger.exception(
+                "auto_name: defensive lock release failed plan=%s", plan_id
+            )
+        raise
+    finally:
+        ai_models.reset_sync_session_factory(factory_token)
 
 

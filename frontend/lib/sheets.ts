@@ -1,7 +1,8 @@
 /**
  * Sheet-level mutation clients (Sprint AI-02b).
  *
- * Today: just the inline rename used by `sheet-index.tsx`. Future plan-viewer
+ * Today: inline rename for the sheet index, and the auto-name-sheets trigger
+ * that fires the title-block re-extract Celery task. Future plan-viewer
  * sheet-level actions (delete, reorder, etc.) belong here so this stays the
  * one entry point for `/api/v1/sheets/{id}` mutations.
  */
@@ -24,6 +25,8 @@ export interface SheetMutationResponse {
   project_id: string;
   page_number: number;
   sheet_name: string | null;
+  /** Drawing identifier (e.g. "A101"); null until the auto-name flow runs. */
+  sheet_number?: string | null;
   sheet_name_source?: SheetNameSource | null;
   scale_value: number | null;
   scale_unit: string | null;
@@ -53,5 +56,40 @@ export async function renameSheet(
   return api.patch<SheetMutationResponse>(
     `/api/v1/sheets/${sheetId}`,
     { sheet_name: sheetName }
+  );
+}
+
+/**
+ * 202 response from `POST .../plans/{id}/auto-name-sheets`. The actual
+ * rename happens in the background -- see `sheets.auto_named` Liveblocks
+ * broadcast and the workspace's polling backstop for completion signaling.
+ */
+export interface AutoNameSheetsResponse {
+  plan_id: string;
+  task_id: string;
+  queued_at: string;
+}
+
+/**
+ * Trigger title-block re-extraction for every sheet in a plan.
+ *
+ * Server enqueues a Celery task that skips manually renamed sheets by default
+ * (`sheet_name_source = 'manual'`). Pass `overwriteManual: true` to replace
+ * those names too. Returns 202 immediately; the plan viewer
+ * refetches sheets when Liveblocks delivers `sheets.auto_named` after the
+ * Celery task completes, with polling as a backstop if the broadcast is missed.
+ *
+ * Errors:
+ *   - 409 `PLAN_NOT_READY` when the plan is still processing or errored.
+ *   - 503 `AUTO_NAME_DISABLED` when the feature flag is off.
+ */
+export async function autoNameSheets(
+  projectId: string,
+  planId: string,
+  options?: { overwriteManual?: boolean }
+): Promise<AutoNameSheetsResponse> {
+  return api.post<AutoNameSheetsResponse>(
+    `/api/v1/projects/${projectId}/plans/${planId}/auto-name-sheets`,
+    { overwrite_manual: options?.overwriteManual === true }
   );
 }

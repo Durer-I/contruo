@@ -12,6 +12,7 @@ from app.api.v1 import (
     liveblocks,
     measurements,
     org,
+    plan_title_block,
     plans,
     projects,
     sheets,
@@ -29,6 +30,7 @@ protected = APIRouter(dependencies=[Depends(enforce_org_subscription_state)])
 protected.include_router(org.router, tags=["organization"])
 protected.include_router(projects.router, tags=["projects"])
 protected.include_router(plans.router, tags=["plans"])
+protected.include_router(plan_title_block.router)
 protected.include_router(sheets.router, tags=["sheets"])
 protected.include_router(conditions.router, tags=["conditions"])
 protected.include_router(assemblies.router, tags=["assemblies"])

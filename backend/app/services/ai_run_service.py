@@ -3,6 +3,7 @@
 Owns:
 
 * ``create_run`` / ``enqueue_run`` -- API entrypoint, called from FastAPI.
+* ``cancel_run`` -- cooperative cancel for ``queued`` / ``running`` rows.
 * ``check_circuit_breaker`` -- 24h per-org cost rollup vs the configured cap.
 * ``acquire_sheet_lock`` / ``release_sheet_lock`` -- Postgres advisory locks
   keyed by sheet uuid so two estimators can't race the same plan/sheet.
@@ -32,13 +33,14 @@ from app.middleware.error_handler import AppException, ConflictException, NotFou
 from app.models.ai_run import AiRun
 from app.services.ai_models import model_versions_snapshot
 from app.services.event_service import log_event
+from app.services import liveblocks_service
 
 logger = logging.getLogger(__name__)
 
 
-#: All six pipeline stages, in execution order.
+#: Pipeline stages between ``start_ai_run`` and ``finalize_ai_run``, in order.
+#: Title-block extraction is not part of Auto Takeoff; use Auto-name sheets for names.
 PIPELINE_STAGES: tuple[str, ...] = (
-    "title_block",
     "classification",
     "schedules_legends",
     "element_detection",
@@ -177,6 +179,84 @@ async def list_runs(
     if status:
         stmt = stmt.where(AiRun.status == status)
     return list((await db.execute(stmt)).scalars().all())
+
+
+async def cancel_run(
+    db: AsyncSession,
+    *,
+    org_id: uuid.UUID,
+    project_id: uuid.UUID,
+    ai_run_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> AiRun:
+    """Mark a ``queued`` or ``running`` run ``cancelled`` and notify Liveblocks.
+
+    Cooperative: Celery stages short-circuit when they next read the row.
+    Idempotent when the run is already ``cancelled``.
+    """
+    run = await get_run(db, org_id, ai_run_id)
+    if run.project_id != project_id:
+        raise AppException(
+            code="AI_RUN_PROJECT_MISMATCH",
+            message="The specified run does not belong to this project.",
+            status_code=400,
+        )
+    if run.status == "cancelled":
+        return run
+    if run.status not in ("queued", "running"):
+        raise ConflictException(
+            "This AI run is no longer active and cannot be cancelled.",
+            code="AI_RUN_NOT_CANCELLABLE",
+        )
+
+    def _sync_cancel(session: Session) -> bool:
+        row = session.get(AiRun, ai_run_id)
+        if row is None or row.status not in ("queued", "running"):
+            return False
+        release_sheet_lock_sync(session, plan_id=row.plan_id, sheet_id=None)
+        finalize_run_sync(
+            session,
+            ai_run_id=ai_run_id,
+            status="cancelled",
+            error_message="Cancelled by user",
+        )
+        return True
+
+    changed = await db.run_sync(_sync_cancel)
+    fresh = await get_run(db, org_id, ai_run_id)
+    if not changed:
+        if fresh.status == "cancelled":
+            return fresh
+        raise ConflictException(
+            "This AI run is no longer active and cannot be cancelled.",
+            code="AI_RUN_NOT_CANCELLABLE",
+        )
+
+    room = liveblocks_service.collaboration_room_id(org_id, project_id)
+    liveblocks_service.broadcast_event_sync(
+        room_id=room,
+        event_type="ai_run.status_changed",
+        data={
+            "ai_run_id": str(ai_run_id),
+            "status": "cancelled",
+            "total_stages": len(PIPELINE_STAGES),
+            "error_message": "Cancelled by user",
+        },
+    )
+
+    await log_event(
+        db,
+        org_id=org_id,
+        user_id=user_id,
+        project_id=project_id,
+        event_type="ai_run.cancelled",
+        entity_type="ai_run",
+        entity_id=ai_run_id,
+        payload={"plan_id": str(fresh.plan_id)},
+    )
+    await db.commit()
+    await db.refresh(fresh)
+    return fresh
 
 
 async def cost_by_org_last_24h(db: AsyncSession) -> list[dict[str, Any]]:

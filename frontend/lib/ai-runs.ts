@@ -90,6 +90,16 @@ export async function createAiRun(
   });
 }
 
+export async function cancelAiRun(
+  projectId: string,
+  aiRunId: string
+): Promise<AiRun> {
+  return api.post<AiRun>(
+    `/api/v1/projects/${projectId}/ai/runs/${aiRunId}/cancel`,
+    {}
+  );
+}
+
 export async function listAiRuns(
   projectId: string,
   opts: { status?: AiRunStatus; limit?: number } = {}
