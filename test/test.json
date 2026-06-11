@@ -1,0 +1,82 @@
+{
+    "0": {
+        "category": "supporting_information",
+        "sheet_type": "legend",
+        "confidence": 0.99,
+        "sheet_name": "PLUMBING LEGEND SHEET",
+        "sheet_number": "P-001",
+        "page": 0
+    },
+    "1": {
+        "category": "takeoff_required",
+        "sheet_type": "plan",
+        "confidence": 0.95,
+        "sheet_name": "UNDERGROUND PLUMBING PLAN",
+        "sheet_number": "P-010",
+        "page": 1
+    },
+    "2": {
+        "category": "takeoff_required",
+        "sheet_type": "plan",
+        "confidence": 0.96,
+        "sheet_name": "FIRST FLOOR DOMESTIC WATER PLAN",
+        "sheet_number": "P-101",
+        "page": 2
+    },
+    "3": {
+        "category": "takeoff_required",
+        "sheet_type": "plan",
+        "confidence": 0.96,
+        "sheet_name": "FIRST FLOOR SANITARY/WASTE PLAN",
+        "sheet_number": "P-200",
+        "page": 3
+    },
+    "4": {
+        "category": "takeoff_required",
+        "sheet_type": "plan",
+        "confidence": 0.95,
+        "sheet_name": "ROOF PLUMBING PLAN",
+        "sheet_number": "P-201",
+        "page": 4
+    },
+    "5": {
+        "category": "supporting_information",
+        "sheet_type": "detail",
+        "confidence": 0.94,
+        "sheet_name": "PLUMBING ENLARGED PLANS",
+        "sheet_number": "P-401",
+        "page": 5
+    },
+    "6": {
+        "category": "supporting_information",
+        "sheet_type": "detail",
+        "confidence": 0.98,
+        "sheet_name": "PLUMBING DETAILS",
+        "sheet_number": "P-501",
+        "page": 6
+    },
+    "7": {
+        "category": "schedule_sheet",
+        "sheet_type": "schedule",
+        "confidence": 0.99,
+        "sheet_name": "PLUMBING SCHEDULES",
+        "sheet_number": "P-601",
+        "page": 7
+    },
+    "8": {
+        "category": "uncertain",
+        "sheet_type": "unknown",
+        "confidence": 0.1,
+        "sheet_name": "",
+        "sheet_number": "",
+        "page": 8
+    },
+    "9": {
+        "category": "uncertain",
+        "sheet_type": "unknown",
+        "confidence": 0.1,
+        "sheet_name": "",
+        "sheet_number": "",
+        "page": 9
+    }
+}

@@ -63,6 +63,15 @@ def compute_plan_content_hash(
     return h.hexdigest()
 
 
+def compute_sheet_structured_text_cache_hash(sheet: Sheet, structured_text: str) -> str:
+    """Stable cache key for Stage 2 text-LLM classification (per sheet + text body)."""
+    h = hashlib.sha256()
+    h.update(str(sheet.id).encode("utf-8"))
+    h.update(b"|")
+    h.update(hashlib.sha256(structured_text.encode("utf-8")).digest())
+    return h.hexdigest()
+
+
 def compute_sheet_content_hash(
     sheet: Sheet,
     *,

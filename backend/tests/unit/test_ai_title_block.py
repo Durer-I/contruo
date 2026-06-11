@@ -253,16 +253,7 @@ class TestManualGuard:
 
 
 class TestReextractTitlesForPlan:
-    """Plan-level orchestrator. Mocks at the boundary: PyMuPDF document,
-    extractor, session.
-    """
-
-    def _patch_doc(self, page_count: int) -> MagicMock:
-        doc = MagicMock()
-        doc.page_count = page_count
-        doc.load_page = MagicMock(return_value=MagicMock())
-        doc.close = MagicMock()
-        return doc
+    """Plan-level orchestrator delegates to ``execute_sheet_text_llm_for_plan``."""
 
     def _make_session_with_sheets(self, sheets: list[MagicMock]) -> MagicMock:
         session = MagicMock()
@@ -275,191 +266,72 @@ class TestReextractTitlesForPlan:
         session.rollback = MagicMock()
         return session
 
-    def test_skips_manual_sheets(self):
+    def test_invokes_execute_and_sets_counters(self):
         plan = MagicMock()
         plan.id = uuid.uuid4()
-        manual_sheet = _make_sheet_obj(source="manual")
-        manual_sheet.page_number = 1
-        auto_sheet = _make_sheet_obj(source="auto")
-        auto_sheet.page_number = 2
+        plan.org_id = uuid.uuid4()
+        sheet = _make_sheet_obj(source="auto")
+        sheet.page_number = 1
+        session = self._make_session_with_sheets([sheet])
 
-        session = self._make_session_with_sheets([manual_sheet, auto_sheet])
+        with patch.object(
+            ai_title_block.ai_sheet_text_llm,
+            "execute_sheet_text_llm_for_plan",
+            return_value=(3, {0: {"page": 0, "sheet_name": "N", "sheet_number": "A1"}}, 1),
+        ) as ex:
+            counters = ai_title_block.reextract_titles_for_plan(
+                session, plan, pdf_bytes=b"%PDF-1.0"
+            )
 
-        with (
-            patch.object(ai_title_block, "fitz", MagicMock(open=MagicMock(return_value=self._patch_doc(2)))),
-            patch.object(
-                ai_title_block,
-                "extract_title_for_sheet",
-                return_value=ai_title_block.TitleExtractionResult(
-                    name="NEW NAME", number="A101", confidence=0.9, method="text_layer"
-                ),
-            ),
+        ex.assert_called_once()
+        assert counters.total == 1
+        assert counters.llm == 1
+        assert counters.written == 1
+        assert counters.sheet_text_llm_cache_hits == 3
+        session.flush.assert_called_once()
+
+    def test_counts_manual_rows_without_calling_eligible_block_skip(self):
+        plan = MagicMock()
+        plan.id = uuid.uuid4()
+        plan.org_id = uuid.uuid4()
+        manual = _make_sheet_obj(source="manual")
+        manual.page_number = 1
+        auto = _make_sheet_obj(source="auto")
+        auto.page_number = 2
+        session = self._make_session_with_sheets([manual, auto])
+
+        with patch.object(
+            ai_title_block.ai_sheet_text_llm,
+            "execute_sheet_text_llm_for_plan",
+            return_value=(0, {}, 2),
         ):
             counters = ai_title_block.reextract_titles_for_plan(
-                session, plan, pdf_bytes=b"%PDF-fake"
+                session, plan, pdf_bytes=b"%PDF-1.0"
             )
 
         assert counters.total == 2
         assert counters.manual_skipped == 1
-        assert counters.written == 1
-        # Manual sheet kept its old values; only the auto sheet was rewritten.
-        assert manual_sheet.sheet_name == "Old name"
-        assert manual_sheet.sheet_number is None
-        assert auto_sheet.sheet_name == "NEW NAME"
-        assert auto_sheet.sheet_number == "A101"
-        assert auto_sheet.sheet_name_source == "auto"
-        assert auto_sheet.discipline == "architectural"
-        assert auto_sheet.classification_method == "sheet_number"
-        assert auto_sheet.classification_confidence == 0.95
+        assert counters.written == 2
 
-    def test_coalesce_write_preserves_existing_when_extract_returns_partial(self):
-        """If the extractor returns name=None, the existing sheet_name must
-        survive -- we only overwrite fields the extractor actually filled in.
-        """
+    def test_propagates_execute_exception_to_counters(self):
         plan = MagicMock()
         plan.id = uuid.uuid4()
-        sheet = _make_sheet_obj(source="auto")
-        sheet.sheet_name = "Existing Name"
-        sheet.sheet_number = None
-        sheet.page_number = 1
+        plan.org_id = uuid.uuid4()
+        sh = _make_sheet_obj(source="auto")
+        sh.page_number = 1
+        session = self._make_session_with_sheets([sh])
 
-        session = self._make_session_with_sheets([sheet])
-
-        with (
-            patch.object(ai_title_block, "fitz", MagicMock(open=MagicMock(return_value=self._patch_doc(1)))),
-            patch.object(
-                ai_title_block,
-                "extract_title_for_sheet",
-                return_value=ai_title_block.TitleExtractionResult(
-                    name=None, number="A101", confidence=0.6, method="text_layer"
-                ),
-            ),
+        with patch.object(
+            ai_title_block.ai_sheet_text_llm,
+            "execute_sheet_text_llm_for_plan",
+            side_effect=RuntimeError("no key"),
         ):
             counters = ai_title_block.reextract_titles_for_plan(
-                session, plan, pdf_bytes=b"%PDF-fake"
+                session, plan, pdf_bytes=b"%PDF-1.0"
             )
 
-        assert counters.written == 1
-        assert sheet.sheet_name == "Existing Name"  # preserved
-        assert sheet.sheet_number == "A101"  # written
-        assert sheet.discipline == "architectural"
-        assert sheet.classification_method == "sheet_number"
-        assert sheet.classification_confidence == 0.95
-
-    def test_discipline_from_existing_sheet_number_when_only_name_extracted(self):
-        plan = MagicMock()
-        plan.id = uuid.uuid4()
-        sheet = _make_sheet_obj(source="auto")
-        sheet.sheet_name = "Old"
-        sheet.sheet_number = "S-100"
-        sheet.discipline = "other"
-        sheet.page_number = 1
-
-        session = self._make_session_with_sheets([sheet])
-
-        with (
-            patch.object(ai_title_block, "fitz", MagicMock(open=MagicMock(return_value=self._patch_doc(1)))),
-            patch.object(
-                ai_title_block,
-                "extract_title_for_sheet",
-                return_value=ai_title_block.TitleExtractionResult(
-                    name="NEW TITLE", number=None, confidence=0.9, method="text_layer"
-                ),
-            ),
-        ):
-            ai_title_block.reextract_titles_for_plan(session, plan, pdf_bytes=b"%PDF-fake")
-
-        assert sheet.sheet_name == "NEW TITLE"
-        assert sheet.sheet_number == "S-100"
-        assert sheet.discipline == "structural"
-        assert sheet.classification_method == "sheet_number"
-
-    def test_unknown_sheet_number_prefix_preserves_discipline(self):
-        plan = MagicMock()
-        plan.id = uuid.uuid4()
-        sheet = _make_sheet_obj(source="auto")
-        sheet.discipline = "structural"
-        sheet.classification_method = "vision"
-        sheet.classification_confidence = 0.88
-        sheet.page_number = 1
-
-        session = self._make_session_with_sheets([sheet])
-
-        with (
-            patch.object(ai_title_block, "fitz", MagicMock(open=MagicMock(return_value=self._patch_doc(1)))),
-            patch.object(
-                ai_title_block,
-                "extract_title_for_sheet",
-                return_value=ai_title_block.TitleExtractionResult(
-                    name="X", number="Z99", confidence=0.9, method="text_layer"
-                ),
-            ),
-        ):
-            ai_title_block.reextract_titles_for_plan(session, plan, pdf_bytes=b"%PDF-fake")
-
-        assert sheet.sheet_number == "Z99"
-        assert sheet.discipline == "structural"
-        assert sheet.classification_method == "vision"
-        assert sheet.classification_confidence == 0.88
-
-    def test_empty_extraction_does_not_touch_source_or_fields(self):
-        plan = MagicMock()
-        plan.id = uuid.uuid4()
-        sheet = _make_sheet_obj(source="auto")
-        sheet.sheet_name = "Existing"
-        sheet.page_number = 1
-
-        session = self._make_session_with_sheets([sheet])
-
-        with (
-            patch.object(ai_title_block, "fitz", MagicMock(open=MagicMock(return_value=self._patch_doc(1)))),
-            patch.object(
-                ai_title_block,
-                "extract_title_for_sheet",
-                return_value=ai_title_block.TitleExtractionResult(
-                    name=None, number=None, confidence=0.0, method="empty"
-                ),
-            ),
-        ):
-            counters = ai_title_block.reextract_titles_for_plan(
-                session, plan, pdf_bytes=b"%PDF-fake"
-            )
-
-        assert counters.empty == 1
-        assert counters.written == 0
-        assert sheet.sheet_name == "Existing"
-
-    def test_records_method_counters(self):
-        plan = MagicMock()
-        plan.id = uuid.uuid4()
-        s1 = _make_sheet_obj(source=None); s1.page_number = 1
-        s2 = _make_sheet_obj(source=None); s2.page_number = 2
-        s3 = _make_sheet_obj(source=None); s3.page_number = 3
-
-        session = self._make_session_with_sheets([s1, s2, s3])
-
-        results_iter = iter([
-            ai_title_block.TitleExtractionResult("N1", "A101", 0.9, "text_layer"),
-            ai_title_block.TitleExtractionResult("N2", "A102", 0.85, "ocr"),
-            ai_title_block.TitleExtractionResult("N3", "A103", 0.85, "llm"),
-        ])
-
-        with (
-            patch.object(ai_title_block, "fitz", MagicMock(open=MagicMock(return_value=self._patch_doc(3)))),
-            patch.object(
-                ai_title_block,
-                "extract_title_for_sheet",
-                side_effect=lambda *a, **kw: next(results_iter),
-            ),
-        ):
-            counters = ai_title_block.reextract_titles_for_plan(
-                session, plan, pdf_bytes=b"%PDF-fake"
-            )
-
-        assert counters.text_layer == 1
-        assert counters.ocr == 1
-        assert counters.llm == 1
-        assert counters.written == 3
+        assert counters.errors
+        assert "no key" in counters.errors[0]["error"]
 
     def test_empty_pdf_bytes_returns_empty_counters(self):
         plan = MagicMock()

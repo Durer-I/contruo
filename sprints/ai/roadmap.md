@@ -7,7 +7,7 @@
 > **Methodology:** Agile sprints with deliverables at the end of each
 > **Depends On:** MVP (Sprints 01-16) shipped to production
 
-**Current position (as of 2026-04):** Sprint **AI-01** and **AI-02 (Sheet Classification)** are **complete**. Sprint **AI-02b** is **partial** — the inline sheet rename shipped, but the manual title-block bbox flow was reset and is in redesign (see [Sprint AI-02b](sprint-ai-02b.md)). **Next blocker:** finish the AI-02b title-block redesign, then [Sprint AI-03](sprint-ai-03.md) (schedule + legend extraction).
+**Current position (as of 2026-05):** Sprints **AI-01**, **AI-02**, **AI-02b**, and **AI-03** are **complete**. AI-02b shipped both the inline sheet rename (Part A) and an auto-name-sheets flow that supersedes the original manual-bbox redesign goal (see [Sprint AI-02b](sprint-ai-02b.md)). AI-03 shipped Stage 3a (schedule + legend extraction). **Next:** [Sprint AI-04](sprint-ai-04.md) (condition resolver). Two follow-on sprints exist as stubs: **AI-03b** (legend manual override) and **AI-03c** (sheet classifier accuracy + image-only legend OCR), to be scheduled if real-data signal demands.
 
 ---
 
@@ -31,7 +31,7 @@ Slicing this into 8 sprints lets each one ship a user-visible win and keeps the 
 ```mermaid
 flowchart TD
     AI01["AI-01: Foundations & Infrastructure"] --> AI02["AI-02: Sheet Classification"]
-    AI02 --> AI02b["AI-02b: Title Block + Inline Rename"]
+    AI02 --> AI02b["AI-02b: Inline Rename + Auto-Name Sheets"]
     AI02b --> AI03["AI-03: Schedule + Legend Extraction"]
     AI03 --> AI04["AI-04: Condition Resolver (Match -> Template -> Create)"]
     AI04 --> AI05["AI-05: AI Layer UX"]
@@ -51,8 +51,10 @@ flowchart TD
 | --------------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | [Sprint AI-01](sprint-ai-01.md)   | Foundations & Infrastructure                      | New tables + Celery AI queue + provider abstraction + per-sheet AI lock + manual "Run Auto-Takeoff" trigger end-to-end                    |
 | [Sprint AI-02](sprint-ai-02.md)   | Sheet Classification                              | Lexical + vision sheet classifier, sheet index UI updates. (Title-block work moved to AI-02b after the AI-02 cut was withdrawn.)          |
-| [Sprint AI-02b](sprint-ai-02b.md) | Title Block Manual Override + Inline Sheet Rename | Inline sheet rename (shipped) + manual title-block bbox redesign (reset; spec carried for next attempt).                                  |
-| [Sprint AI-03](sprint-ai-03.md)   | Schedule + Legend Extraction                      | Multi-strategy schedule extraction, heuristic-first tag column ID, legend symbol templates in Storage                                     |
+| [Sprint AI-02b](sprint-ai-02b.md) | Inline Sheet Rename + Auto-Name Sheets            | Inline sheet rename + plan-wide auto-name task that reads the title block on demand. Both shipped.                                        |
+| [Sprint AI-03](sprint-ai-03.md)   | Schedule + Legend Extraction                      | Multi-strategy schedule extraction, heuristic-first tag column ID, legend symbol templates in Storage. **Shipped.**                       |
+| Sprint AI-03b (TBD)               | Legend Manual Override                            | Optional. Non-blocking "Set legend region" button that posts a bbox + triggers a per-sheet re-extract. Schedule when real-data hit rate demands it. |
+| Sprint AI-03c (TBD)               | Classifier Accuracy + Image-Only Legends          | Optional. LLM-on-title classifier rewrite, OCR for legends without a text layer, polygon / circle / triangle symbol shapes.               |
 | [Sprint AI-04](sprint-ai-04.md)   | Condition Resolver                                | OpenAI embedding integration, Match -> Template -> Create resolver, template cloning, "Save to library?" nudge                            |
 | [Sprint AI-05](sprint-ai-05.md)   | AI Layer UX                                       | AI Layer overlays, review panel, confidence-tiered behavior, run health summary, keyboard shortcuts                                       |
 | [Sprint AI-06](sprint-ai-06.md)   | Symbol + Callout Detection                        | OpenCV multi-scale template matching, callout balloon detection, tag-to-drawing mapping; first end-to-end count measurements via AI Layer |
@@ -67,7 +69,7 @@ flowchart TD
 ```mermaid
 graph TD
     AI01[AI-01: Foundations] --> AI02[AI-02: Sheet Classification]
-    AI01 --> AI02b[AI-02b: Title Block + Rename]
+    AI01 --> AI02b[AI-02b: Rename + Auto-Name]
     AI01 --> AI03[AI-03: Schedules + Legends]
     AI02 --> AI03
     AI02b --> AI03
@@ -86,7 +88,7 @@ graph TD
 
 
 
-Note: AI-02, AI-02b, and AI-03 can run partially in parallel once AI-01 ships, since classification, the manual title-block override, and schedule/legend extraction share infrastructure but not detection logic. AI-03 is not strictly blocked on AI-02b — the chain still walks past Stage 1 as a no-op while the redesign is in progress.
+Note: AI-02, AI-02b, and AI-03 ran partially in parallel because classification, auto-name, and schedule/legend extraction share infrastructure but not detection logic. AI-03 was not strictly blocked on AI-02b — the chain just runs auto-name as a best-effort pre-prep hook (see `pipeline_prep_auto_name` in [docs/architecture/ai-pipeline.md](../../docs/architecture/ai-pipeline.md)).
 
 ---
 
@@ -97,8 +99,10 @@ Note: AI-02, AI-02b, and AI-03 can run partially in parallel once AI-01 ships, s
 | ------ | ------------ | ---------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AI-01  | **Complete** | 2026-04    | 2026-04  | See [What shipped in AI-01](#what-shipped-in-ai-01) below.                                                                                                                              |
 | AI-02  | **Complete** | 2026-04    | 2026-04  | Sheet classification only. Title-block work was moved to AI-02b after the original cut was withdrawn. See [What shipped in AI-02](#what-shipped-in-ai-02) below.                        |
-| AI-02b | **Partial**  | 2026-04    | -        | Inline sheet rename **shipped**; manual title-block bbox flow **reset**, redesign in [sprint-ai-02b.md](sprint-ai-02b.md). See [What shipped in AI-02b](#what-shipped-in-ai-02b) below. |
-| AI-03  | Not Started  | -          | -        | Next: schedule + legend extraction.                                                                                                                                                     |
+| AI-02b | **Complete** | 2026-04    | 2026-05  | Inline sheet rename + auto-name-sheets shipped (the manual-bbox redesign was superseded by an auto-name flow that reads the title block on demand). See [What shipped in AI-02b](#what-shipped-in-ai-02b) below. |
+| AI-03  | **Complete** | 2026-05    | 2026-05  | Stage 3a — schedule + legend extraction. See [What shipped in AI-03](#what-shipped-in-ai-03) below.                                                                                     |
+| AI-03b | Not Started  | -          | -        | Optional follow-on. Manual override for low-confidence legend regions (a non-blocking "Set legend region" button on a sheet that posts a bbox + triggers a per-sheet re-extract). Schedule only if real-data hit rate is too low. |
+| AI-03c | Not Started  | -          | -        | Optional follow-on. Sheet classifier accuracy fix (LLM-on-title vs vision-on-thumbnail) + OCR-based label extraction for image-only legends + line-art / polygon / circle symbol shapes in the legend detector. |
 | AI-04  | Not Started  | -          | -        |                                                                                                                                                                                         |
 | AI-05  | Not Started  | -          | -        |                                                                                                                                                                                         |
 | AI-06  | Not Started  | -          | -        |                                                                                                                                                                                         |
@@ -141,12 +145,30 @@ the upload pipeline). The full spec lives in [sprint-ai-02b.md](sprint-ai-02b.md
 - **UI:** `sheet-index.tsx` adds a pencil button + double-click → inline `<input>` (Enter saves, Esc cancels), optimistic update with revert-on-error, subtle dot indicator for `sheet_name_source === 'manual'`. New client `frontend/lib/sheets.ts::renameSheet`.
 - **Tests:** `test_sheet_rename_endpoint` (4 cases) — green.
 
-**Part B — Manual title-block bbox (reset, redesign):**
+**Part B — Auto-name sheets (shipped; supersedes the original "manual title-block bbox" plan):**
 
-- **Status:** The first cut of the manual bbox flow (Toolbar “Set title block” → draw rect on canvas → backend persist + re-extract) was **removed** along with the AI-02 auto-detect. Reason: it inherited the same fragile pdfminer-based extractor and never produced reliable names on real plans, and the entry point only made sense as a “refresh stale auto names” override that never worked.
-- **Removed (as part of the reset):** `frontend/lib/ai-title-block.ts`, `title-block-confirm-dialog.tsx`, the “Set title block” toolbar button + draw-rect overlay paths in `plan-viewer-workspace.tsx` / `plan-pdf-canvas.tsx`, the `POST /api/v1/projects/{pid}/plans/{plan_id}/title-block` endpoint, `plan_service.set_manual_title_block`, the `ai_pipeline.reextract_plan_titles_task` worker, the `ai_title_block.reextract_titles_for_plan` helper, and the `ai_cache.cache_invalidate` invalidation path for the `'title_block'` stage. The `plans.title_block_`* columns are kept in place for the redesign — no migration needed to bring them back.
-- **Carried forward:** `sheets.sheet_name_source` (so the redesigned flow keeps the manual-safe guard intact) and the `ai_ocr` helper (will be the OCR fallback inside the redesign).
-- **Redesign target (next attempt):** click-to-pick bbox or guided template-based extractor that uses the real text layer + `ai_ocr` fallback. Detailed acceptance criteria + non-goals + coordinate-system contract live in `sprint-ai-02b.md`.
+- **Status:** The reset opened the door to a simpler design that ships the user-visible value (correct sheet names + numbers) without the manual-draw-bbox UX surface. Instead of asking the user to draw a region, an "Auto-name sheets" button on the plan viewer enqueues a Celery task that re-extracts `sheet_name` + `sheet_number` from the title block of every sheet. Manual renames (`sheets.sheet_name_source = 'manual'`) are always preserved. The `_sheet_eligible_for_auto_name` guard in `ai_title_block` enforces this on every write path.
+- **DB:** Alembic migration `016` — `sheets.sheet_number VARCHAR(40) NULL`. Both `sheet_name` and `sheet_number` are guarded by `sheet_name_source` together (one rename marks both 'manual').
+- **API:** `POST /api/v1/projects/{pid}/plans/{plan_id}/auto-name-sheets` → `ai_pipeline.reextract_plan_titles_task` (non-blocking). The task acquires the per-plan AI lock so it can't race a concurrent AI run. Returns 503 (`AUTO_NAME_DISABLED`) when `AI_AUTO_NAME_ENABLED=false`.
+- **Worker:** `ai_title_block.reextract_titles_for_plan` runs three branches per sheet: bottom-right corner heuristic on the text layer → `ai_ocr` Tesseract fallback → `OpenAILLMModel.structured_output` cleanup pass for any sheet where the heuristic / OCR returned a low-confidence answer. The LLM provider is decoupled (`AI_TITLE_BLOCK_LLM_PROVIDER`); strict JSON-schema mode prevents prose leaks.
+- **UI:** "Auto-name sheets" button in the plan viewer header alongside "Run Auto-Takeoff". `sheets.auto_named` Liveblocks broadcast prompts the sheet index to refetch.
+- **Carried forward into AI-03:** the `_sheet_eligible_for_auto_name` pattern (every write path that touches a sheet field guarded by `sheet_name_source` checks it first), and the `get_title_block_llm()` -> `OpenAILLMModel.structured_output` factory pattern (now mirrored in `ai_models.get_schedules_llm`).
+- **Not implemented (deferred):** click-to-pick title-block bbox. The auto-name flow proved the bbox is reliably the bottom-right corner; a manual override is not worth the UX surface today.
+
+### What shipped in AI-03
+
+Stage 3a of the AI Auto-Takeoff pipeline. `ai_pipeline.stage_schedules_legends` is no longer a no-op: it extracts schedule tables and crops legend symbols on the relevant sheets, populating the contract `extracted_schedules` / `extracted_legends` / `extracted_legend_variants` tables that AI-04 (resolver) and AI-06 (symbol detector) consume.
+
+- **DB:** Alembic migration `017` — `extracted_schedules` gains `description_column_index`, `quantity_column_index`, `dimension_column_indexes` (JSONB array), `material_column_index`. New table `extracted_legend_variants` (one row per (symbol, scale, rotation); 5 scales x 4 rotations = 20 variants per primary symbol). Variants live in their own table so AI-04's resolver, which only needs labels, doesn't pay 20x egress on its read path.
+- **Sheet selection:** `ai_sheet_filter.select_schedule_sheets` / `select_legend_sheets` filter on `sheet_name` keywords (`%schedule%`, `%legend%`, `%symbol%`, etc.). The AI-02 classifier output is intentionally NOT used as a gate here -- accuracy issues are tracked under AI-03c.
+- **Schedule extractor:** `ai_schedule_extractor` runs `pdfplumber.lines_strict` -> `pdfplumber.lines` -> `pdfplumber.text` -> vision fallback (`AnthropicVisionModel.extract_structured`, newly wired). Each strategy is gated by a row-width-variance quality scorer so noise matches don't pollute the resolver input.
+- **Tag-column scorer:** `ai_tag_column.score_columns` runs a 4-feature deterministic scorer (header keyword + cell shape + uniqueness + first-column bias) and identifies tag / description / quantity / dimension(s) / material columns. Tag column is the only role with an LLM tie-break (`get_schedules_llm`, OpenAI `gpt-4o-mini` strict-JSON), gated by score-margin + skip-above thresholds. Cached in `ai_stage_cache` so re-runs cost nothing.
+- **Legend detector:** `ai_legend_detector` is a faithful port of `AI/controller/legends.py` (group rects by rounded x0 / x1 -> filter to most-common size -> drop rects with text inside -> find adjacent label) plus an additive multi-direction label search (right + above) and per-symbol confidence scoring. Sub-threshold detections are silently skipped (logged in `summary_jsonb`); manual override deferred to optional AI-03b.
+- **Legend extractor:** `ai_legend_extractor.persist_legend_candidates` renders each symbol at 300 DPI, computes `template_hash = sha256(primary_bytes)`, generates the (5 scales x 4 rotations) variant grid via PIL transforms (faster than re-rendering from PDF), uploads each variant to deterministic Supabase Storage paths (`{org_id}/legends/{plan_id}/{hash}_s{scale}_r{rotation}.png`), and writes one `extracted_legends` + 20 `extracted_legend_variants` rows. `persist_from_cached_metadata` is the cache-hit fast path that re-inserts DB rows without re-rendering or re-uploading.
+- **Pipeline body:** `_stage_schedules_legends_body` orchestrates the per-sheet flow with content-hash caching (`stage="schedules_v1"` and `stage="legends_v1"`). Per-sheet failures are logged and swallowed -- one bad sheet does not fail the stage. Counters (`schedules_extracted`, `legend_symbols_extracted`, `legend_variants_written`, cache hits, vision fallbacks, LLM tie-breaks) flow into `ai_runs.summary_jsonb["schedules_legends"]` for the run-summary panel.
+- **Internal API + UI:** `GET /internal/ai/runs/{ai_run_id}/extractions` (owner + admin) and `frontend/app/(app)/internal/ai/runs/[runId]/extractions/page.tsx` render every extracted schedule (with the column-role colour tags) and every legend symbol (with its 20-variant grid). NOT linked from the customer-facing UI; engineering navigates directly.
+- **Tests:** New unit tests for the sheet filter, schedule extractor, tag-column scorer, legend detector, legend extractor (mocked storage), legend storage helpers, and the new `get_schedules_llm` factory. Real model APIs are mocked at the boundary (no network calls in CI). 31 new tests, all green.
+- **Docs:** `backend/README.md` carries the AI-03 env-var section. `docs/architecture/ai-pipeline.md` describes Stage 3a end-to-end.
 
 ---
 

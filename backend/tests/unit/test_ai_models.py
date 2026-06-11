@@ -137,6 +137,19 @@ def test_cost_tracking_writes_to_active_run():
     assert commits == [True]
 
 
+def test_get_schedules_llm_returns_openai_by_default(monkeypatch):
+    """AI-03 schedules LLM is decoupled from the global LLM provider."""
+    monkeypatch.setenv("AI_LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("AI_LLM_MODEL", "claude-sonnet-4-5")
+    monkeypatch.setenv("AI_SCHEDULES_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("AI_SCHEDULES_LLM_MODEL", "gpt-4o-mini")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    get_settings.cache_clear()
+    llm = ai_models.get_schedules_llm()
+    assert isinstance(llm, ai_models.OpenAILLMModel)
+    assert llm.model_id == "gpt-4o-mini"
+
+
 def test_cost_tracking_skips_db_when_zero_cost_and_zero_tokens():
     """Pure no-op stages should not waste a DB round-trip."""
     ai_run_id = uuid.uuid4()

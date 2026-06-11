@@ -633,9 +633,17 @@ class ClassificationCounters:
     by_type: dict[str, int] = field(default_factory=dict)
     lexical_count: int = 0
     vision_count: int = 0
+    text_llm_count: int = 0
     low_confidence_count: int = 0
+    by_category: dict[str, int] = field(default_factory=dict)
 
-    def add(self, r: ClassificationResult, *, low_threshold: float) -> None:
+    def add(
+        self,
+        r: ClassificationResult,
+        *,
+        low_threshold: float,
+        category: str | None = None,
+    ) -> None:
         self.total += 1
         self.by_discipline[r.discipline] = self.by_discipline.get(r.discipline, 0) + 1
         self.by_type[r.sheet_type] = self.by_type.get(r.sheet_type, 0) + 1
@@ -643,8 +651,14 @@ class ClassificationCounters:
             self.lexical_count += 1
         elif r.method == "vision":
             self.vision_count += 1
+        elif r.method == "text_llm":
+            self.text_llm_count += 1
         if r.confidence < low_threshold:
             self.low_confidence_count += 1
+        if category:
+            c = str(category).strip()
+            if c:
+                self.by_category[c] = self.by_category.get(c, 0) + 1
 
     def as_summary(self) -> dict[str, Any]:
         return {
@@ -653,7 +667,9 @@ class ClassificationCounters:
             "by_type": dict(self.by_type),
             "lexical_count": self.lexical_count,
             "vision_count": self.vision_count,
+            "text_llm_count": self.text_llm_count,
             "low_confidence_count": self.low_confidence_count,
+            "by_category": dict(self.by_category),
         }
 
 

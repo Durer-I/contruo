@@ -132,18 +132,18 @@ prompt = """
     Please return the same json array but remove the fasle positives
 
 """
-# response = client.responses.create(
-#     model="gpt-5.4-mini",
-#     input=[{
-#         "role": "user",
-#         "content": prompt + f"\n\n{rects}"
+response = client.responses.create(
+    model="gpt-5.4-mini",
+    input=[{
+        "role": "user",
+        "content": prompt + f"\n\n{rects}"
          
-#           }],
-#     temperature=0
-# )
-# gpt = response.output_text
+          }],
+    temperature=0
+)
+gpt = response.output_text
 
-# data = json.loads(gpt)
+data = json.loads(gpt)
 
 with open(f"../data/{drawing}/legends/{drawing}_legends_{pg}.json", "w") as f:
     json.dump(rects, f,indent=4)

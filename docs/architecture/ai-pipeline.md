@@ -1,11 +1,11 @@
 # AI Auto-Takeoff Pipeline
 
-> **Status:** Sprint AI-02 (sheet classification, Stage 2) shipped. Stage 1 (title block) is a deliberate **no-op** until [Sprint AI-02b](../../sprints/ai/sprint-ai-02b.md) lands the redesigned manual-bbox flow. Stages 3–5 remain no-ops until AI-03 onward.
-> **Stack:** Celery + dedicated `ai_pipeline` queue, PostgreSQL advisory locks, Liveblocks REST broadcasts, swappable model providers (Anthropic + OpenAI), Tesseract for OCR fallback.
+> **Status:** Sprints AI-01, AI-02, AI-02b, and AI-03 shipped. Stage 2 (sheet classification) and Stage 3a (schedule + legend extraction) run for real. Title-block extraction lives outside the counted chain as a best-effort `pipeline_prep_auto_name` hook (Sprint AI-02b). Stage 3b (element detection) and Stage 4 (resolver + layer write) remain no-ops until AI-04 / AI-06+.
+> **Stack:** Celery + dedicated `ai_pipeline` queue, PostgreSQL advisory locks, Liveblocks REST broadcasts, swappable model providers (Anthropic + OpenAI), Tesseract for OCR fallback, pdfplumber + PyMuPDF + PIL for schedule + legend extraction, Supabase Storage for legend symbol PNGs.
 
 This doc describes the runtime shape of the AI Auto-Takeoff feature: how a user click becomes a multi-stage Celery DAG, how stages share state, how costs are attributed, and how the system protects itself from runaway spend or concurrent runs.
 
-For the product spec see [features/ai/ai-auto-takeoff.md](../../features/ai/ai-auto-takeoff.md). For monitoring queries see [docs/ops/ai-runs-monitoring.md](../ops/ai-runs-monitoring.md). For the title-block redesign see [sprints/ai/sprint-ai-02b.md](../../sprints/ai/sprint-ai-02b.md).
+For the product spec see [features/ai/ai-auto-takeoff.md](../../features/ai/ai-auto-takeoff.md). For monitoring queries see [docs/ops/ai-runs-monitoring.md](../ops/ai-runs-monitoring.md). For the title-block / auto-name flow see [sprints/ai/sprint-ai-02b.md](../../sprints/ai/sprint-ai-02b.md). For the schedule + legend stage see [sprints/ai/sprint-ai-03.md](../../sprints/ai/sprint-ai-03.md).
 
 ---
 
@@ -26,24 +26,31 @@ For the product spec see [features/ai/ai-auto-takeoff.md](../../features/ai/ai-a
                                        └─────────────────────────────────────────┘
                                                                         │
                                                                         ▼
-                                       ┌─────────────────────────────────────────┐
-                                       │ Celery worker on `ai_pipeline` queue    │
-                                       │                                         │
-                                       │  start_ai_run                           │
-                                       │    └─ pg_try_advisory_lock(plan)        │
-                                       │    └─ status -> running                 │
-                                       │    └─ broadcast ai_run.status_changed   │
-                                       │  stage_title_block       (no-op AI-02b) │
-                                       │  stage_classification    (AI-02)        │
-                                       │    └─ lexical pass + vision fallback    │
-                                       │  stage_schedules_legends (no-op AI-03)  │
-                                       │  stage_element_detection (no-op AI-06+) │
-                                       │  stage_resolver_and_layer_write (AI-04) │
-                                       │  finalize_ai_run                        │
-                                       │    └─ release lock                      │
-                                       │    └─ status -> completed               │
-                                       │    └─ broadcast ai_run.status_changed   │
-                                       └─────────────────────────────────────────┘
+                                       ┌──────────────────────────────────────────────────┐
+                                       │ Celery worker on `ai_pipeline` queue             │
+                                       │                                                  │
+                                       │  pipeline_prep_auto_name (AI-02b, best-effort)   │
+                                       │    └─ reextract_plan_titles_task (suppressed     │
+                                       │       on failure; respects manual rename guard)  │
+                                       │  start_ai_run                                    │
+                                       │    └─ pg_try_advisory_lock(plan)                 │
+                                       │    └─ status -> running                          │
+                                       │    └─ broadcast ai_run.status_changed            │
+                                       │  stage_classification    (AI-02)                 │
+                                       │    └─ lexical pass + vision fallback             │
+                                       │  stage_schedules_legends (AI-03)                 │
+                                       │    ├─ schedule extractor on schedule sheets      │
+                                       │    │  (lines_strict → lines → text → vision)     │
+                                       │    │  + tag-column scorer (heuristic + LLM)      │
+                                       │    └─ legend detector + extractor on legend      │
+                                       │       sheets (5 scales × 4 rotations to Storage) │
+                                       │  stage_element_detection (no-op AI-06+)          │
+                                       │  stage_resolver_and_layer_write (no-op AI-04)    │
+                                       │  finalize_ai_run                                 │
+                                       │    └─ release lock                               │
+                                       │    └─ status -> completed                        │
+                                       │    └─ broadcast ai_run.status_changed            │
+                                       └──────────────────────────────────────────────────┘
                                                                         │
                                        ┌────────────────────────────────┘
                                        ▼
@@ -61,26 +68,26 @@ Each stage:
 5. Records a per-stage timing entry into `ai_runs.summary_jsonb["stages"][<stage>]`.
 6. Broadcasts a `ai_run.status_changed` event to the project's Liveblocks room.
 
-As of Sprint AI-02:
+As of Sprint AI-03:
 
-- **Stage 1 (`stage_title_block`)** -- **no-op.** The Celery task still runs (so the chain shape is preserved end-to-end and `summary_jsonb.stages.title_block` is still recorded with `duration_ms`), but its body delegates to `_noop_stage` and returns immediately. The original AI-02 cut (3-sheet bbox heuristic + per-sheet `extract_title_for_sheet` loop + low-confidence pause) was withdrawn after it failed on real plans; the redesign lives in [Sprint AI-02b](../../sprints/ai/sprint-ai-02b.md).
-- **Stage 2 (`stage_classification`)** -- runs a lexical/regex pass over `sheets.sheet_name`, then escalates only the *low-lexical-confidence + interesting* bucket (e.g. floor plans whose names are unparseable) to a batched vision call. Cover/index/spec sheets never escalate. Result is stored on `sheets.discipline` / `sheets.sheet_type` / `sheets.classification_confidence` / `sheets.classification_method`.
+- **Pre-stage prep (`pipeline_prep_auto_name`)** -- **AI-02b.** Best-effort task that runs the same `reextract_plan_titles_task` body as the standalone "Auto-name sheets" button. Manual sheet renames are protected (`sheets.sheet_name_source = 'manual'`). Failures are logged + swallowed; the run still proceeds. Disabled when `AI_AUTO_NAME_ENABLED=false`. There is no `stage_title_block` in the counted chain — the prep hook is the only title-block work the worker performs.
+- **Stage 2 (`stage_classification`)** -- **AI-02.** Lexical/regex pass over `sheets.sheet_name`, then escalates only the *low-lexical-confidence + interesting* bucket (e.g. floor plans whose names are unparseable) to a batched vision call. Cover/index/spec sheets never escalate. Result is stored on `sheets.discipline` / `sheets.sheet_type` / `sheets.classification_confidence` / `sheets.classification_method`.
+- **Stage 3a (`stage_schedules_legends`)** -- **AI-03.** Two parallel sub-flows on the relevant subset of sheets:
+  - **Schedules:** `ai_sheet_filter.select_schedule_sheets(sheets)` keyword-filters by `sheets.sheet_name` (`%schedule%`, etc.). For each match, `ai_schedule_extractor` walks `pdfplumber.lines_strict` -> `pdfplumber.lines` -> `pdfplumber.text` -> `AnthropicVisionModel.extract_structured` (vision fallback) until a quality-scored table comes back. `ai_tag_column.score_columns` then runs a 4-feature heuristic to tag each column (tag / description / quantity / dimension / material); the tag-column role gets an LLM tie-break (`get_schedules_llm`) when the score margin is below threshold. One row per schedule -> `extracted_schedules`.
+  - **Legends:** `select_legend_sheets(sheets)` keyword-filters (`%legend%`, `%symbol%`, etc.). `ai_legend_detector` ports the standalone prototype (group rects by rounded `x0` / `x1` -> filter to the most common size -> drop rects with text inside -> find adjacent label) plus an additive multi-direction label search and per-symbol confidence scoring. For each accepted symbol, `ai_legend_extractor` renders the primary PNG, generates a 5-scales x 4-rotations variant grid via PIL transforms, uploads each variant to a deterministic Supabase Storage path (`{org_id}/legends/{plan_id}/{template_hash}_s{scale}_r{rotation}.png`), and writes one `extracted_legends` row + 20 `extracted_legend_variants` rows per symbol.
+  - **Caching:** Per-sheet content-hash cache (`ai_stage_cache`, stages `schedules_v1` and `legends_v1`). Schedule cache stores serialized table + column metadata. Legend cache stores `template_hash` + `primary_storage_path` (no PNG bytes); on a hit, `persist_from_cached_metadata` re-inserts DB rows without re-rendering or re-uploading.
+- **Stage 3b (`stage_element_detection`)** -- **no-op** until AI-06+.
+- **Stage 4 (`stage_resolver_and_layer_write`)** -- **no-op** until AI-04 / AI-05.
 
-Stages 3-5 remain no-ops and are filled in by later sprints without touching the chain wiring. Stage 1 is in the same posture until AI-02b lands.
+Stages 3b and 4 are filled in by later sprints without touching the chain wiring.
 
 ### Pause / resume
 
-**Removed.** The original AI-02 cut had Stage 1 transition `ai_runs.status` to `'awaiting_title_block'` on low-confidence bbox detection and resume via `POST /api/v1/projects/{pid}/ai/runs/{rid}/title-block`. Both the pause path and the resume endpoint were removed when the detector was reset:
-
-- `ai_run_service.PAUSE_STATUS_AWAITING_TITLE_BLOCK`, `pause_run_for_title_block_sync`, and `resume_run_after_title_block` are gone.
-- `confirm_title_block` and `build_partial_chain_after_title_block` are gone.
-- `'awaiting_title_block'` is no longer a valid `AiRunStatus` value (frontend or backend).
-
-The `ai_runs.status` column stays widened to `VARCHAR(40)` (migration `014`) so AI-02b can re-introduce a pause-style status without a new migration.
+**Not present.** The original AI-02 had Stage 1 pause `ai_runs.status` to `'awaiting_title_block'` on low-confidence bbox detection. The pause path and the resume endpoint were both removed when the AI-02 detector was reset, and the AI-02b auto-name redesign chose not to re-introduce them (auto-name runs as a non-blocking pre-prep hook instead). The `ai_runs.status` column stays widened to `VARCHAR(40)` (migration `014`) so a future flow can re-introduce a pause-style status without a new migration.
 
 ### Per-sheet groundwork
 
-The per-sheet pure-function pattern (a stage body that loops one open `fitz.Document` over each sheet, with a sibling `@celery_app.task` registration so the same function can later be fanned out as a chord) is preserved as the template for AI-06+. Stage 1's prior implementation (`extract_title_for_sheet` + `per_sheet_extract_title_task`) was the first instance and was removed with the rest of the title-block code; it will return inside AI-02b.
+The per-sheet pure-function pattern (a stage body that loops one open `fitz.Document` over each sheet, with content-hash caching and per-sheet failure isolation) is the working template across Stages 2 and 3a, and is the canonical shape for AI-06+. Stage 3a (`_stage_schedules_legends_body`) is the most complete current example: it iterates schedule-eligible sheets, then legend-eligible sheets, swallows per-sheet exceptions into `summary_jsonb.errors`, and emits per-stage cache-hit + cost counters into `summary_jsonb.schedules_legends`.
 
 ---
 
@@ -90,11 +97,19 @@ Three protocols cover every external model call in the pipeline. Swapping provid
 
 | Protocol | Use cases | Default provider | Default model |
 |---|---|---|---|
-| `VisionModel` | Sheet classification fallback, lineless schedule extraction, ambiguous-symbol regions | `anthropic` | `claude-sonnet-4-5` |
-| `EmbeddingModel` | Condition resolver text vectorization | `openai` | `text-embedding-3-small` (1536-dim) |
-| `LLMModel` | Condition name summarization, assembly enrichment | `anthropic` | `claude-sonnet-4-5` |
+| `VisionModel` | Sheet classification fallback (Stage 2), schedule extraction vision fallback (Stage 3a), ambiguous-symbol regions (AI-06+) | `anthropic` | `claude-sonnet-4-5` |
+| `EmbeddingModel` | Condition resolver text vectorization (AI-04) | `openai` | `text-embedding-3-small` (1536-dim) |
+| `LLMModel` | Title-block cleanup (AI-02b), schedule tag-column tie-break (AI-03), condition name summarization, assembly enrichment | `anthropic` (default `LLMModel`) / `openai` (title-block + schedules) | `claude-sonnet-4-5` / `gpt-4o-mini` |
 
-All three are obtained via factory functions (`get_vision_model()`, `get_embedding_model()`, `get_llm_model()`) that read the active settings at call time.
+Factories that read active settings at call time:
+
+- `get_vision_model()` — sheet classification + Stage 3a vision fallback.
+- `get_embedding_model()` — AI-04.
+- `get_llm_model()` — generic Anthropic LLM.
+- `get_title_block_llm()` (AI-02b) — defaults to OpenAI `gpt-4o-mini`; gated by `AI_TITLE_BLOCK_LLM_PROVIDER`.
+- `get_schedules_llm()` (AI-03) — defaults to OpenAI `gpt-4o-mini`; gated by `AI_SCHEDULES_LLM_PROVIDER` / `AI_SCHEDULES_LLM_MODEL`.
+
+`AnthropicVisionModel.extract_structured(image_bytes, schema, prompt)` is the structured-output entry point used by Stage 3a's vision fallback (was a stub before AI-03).
 
 ### Cost attribution
 
@@ -122,6 +137,11 @@ Stage outputs are deterministic in their inputs, so we cache them in `ai_stage_c
 
 A cache hit short-circuits the stage body. The stage still records a timing entry with `cache_hit: true`, so re-run analytics show what fraction of the pipeline is "free".
 
+Stage 3a (AI-03) caches at the per-sheet granularity under two stage keys:
+
+- `schedules_v1` — the cached payload is the serialized list of extracted tables (rows, headers, column-role indices, extraction strategy). On a hit, `extracted_schedules` rows are re-inserted directly with no PDF re-parse.
+- `legends_v1` — the cached payload is the list of `(template_hash, primary_storage_path)` pairs for accepted symbols. On a hit, `ai_legend_extractor.persist_from_cached_metadata` re-inserts the `extracted_legends` + `extracted_legend_variants` rows without re-rendering or re-uploading PNGs (the same Storage objects are still pinned because their paths are deterministic on `template_hash`).
+
 Cache writes use a unique constraint and tolerate the race -- if two workers compute the same payload simultaneously, the second write loses the unique-key conflict, rolls back, and the next read finds the first row.
 
 ---
@@ -133,9 +153,11 @@ Concurrent runs on the same plan are rejected at two layers:
 1. **API layer (`assert_no_active_run_for_plan`):** Before INSERT, look for any `queued` or `running` run on the same `(org_id, plan_id)`. Return `409 AI_RUN_LOCKED` if one exists.
 2. **Worker layer (`acquire_sheet_lock_sync`):** `pg_try_advisory_lock(hash(plan_id))` at the start of `start_ai_run`. The lock auto-releases when the session closes, so a worker crash never leaves a permanent lock. Failure here transitions the run to `failed` immediately.
 
-There is currently no in-pipeline pause path (the AI-02 `awaiting_title_block` pause was removed when the detector was reset; see [Pause / resume](#pause--resume)). When AI-02b reintroduces a pause-style status, this section will be updated to describe how the lock is held across the pause.
+There is currently no in-pipeline pause path (the AI-02 `awaiting_title_block` pause was removed when the detector was reset; see [Pause / resume](#pause--resume)). The AI-02b auto-name flow runs as a non-blocking pre-prep hook rather than re-introducing a pause.
 
-Sprint AI-02 still uses one plan-scoped lock per run. When AI-06+ parallelizes detection by sheet, the key will move to `(plan_id, sheet_id)`.
+The standalone `reextract_plan_titles_task` (AI-02b's "Auto-name sheets" button) acquires the same plan-scoped advisory lock so it cannot race a concurrent AI run; lock-busy retries with backoff up to ~1 minute, then fails the task.
+
+The pipeline still uses one plan-scoped lock per run. When AI-06+ parallelizes detection by sheet, the key will move to `(plan_id, sheet_id)`.
 
 ---
 
@@ -157,14 +179,13 @@ stage_completed ai_run_id=... stage=title_block duration_ms=42 cache_hit=False t
 
 Failures route through `_log_ai_failure` with the stage name and exception type. Sentry is not wired in AI-01; when it is, this is the single place to add `sentry_sdk.capture_exception`.
 
-The `ai_runs.summary_jsonb` shape (post-AI-02, with Stage 1 as no-op) is:
+The `ai_runs.summary_jsonb` shape (post-AI-03) is:
 
 ```json
 {
   "stages": {
-    "title_block":       { "duration_ms": 0,    "cache_hit": false, "started_at": "...", "finished_at": "..." },
     "classification":    { "duration_ms": 820,  "cache_hit": false, "started_at": "...", "finished_at": "..." },
-    "schedules_legends": { "duration_ms": 0,    "cache_hit": false, "started_at": "...", "finished_at": "..." },
+    "schedules_legends": { "duration_ms": 4210, "cache_hit": false, "started_at": "...", "finished_at": "..." },
     "element_detection": { "duration_ms": 0,    "cache_hit": false, "started_at": "...", "finished_at": "..." },
     "resolver_and_layer_write": { "duration_ms": 0, "cache_hit": false, "started_at": "...", "finished_at": "..." },
     "finalize":          { "duration_ms": 12,   "cache_hit": false, "started_at": "...", "finished_at": "..." }
@@ -173,6 +194,20 @@ The `ai_runs.summary_jsonb` shape (post-AI-02, with Stage 1 as no-op) is:
     "by_discipline": { "architectural": 18, "structural": 6, "general": 2 },
     "by_sheet_type": { "plan": 14, "section": 4, "detail": 6, "cover": 2 },
     "low_confidence_count": 1
+  },
+  "schedules_legends": {
+    "schedule_sheets_eligible": 4,
+    "schedule_sheets_processed": 4,
+    "schedules_extracted": 6,
+    "schedules_cache_hits": 1,
+    "schedules_vision_fallbacks": 0,
+    "tag_column_llm_tiebreaks": 2,
+    "legend_sheets_eligible": 2,
+    "legend_sheets_processed": 2,
+    "legend_symbols_extracted": 18,
+    "legend_variants_written": 360,
+    "legends_cache_hits": 0,
+    "errors": []
   },
   "counters": {
     "stage_2_total_sheets": 26,
@@ -185,7 +220,7 @@ The `ai_runs.summary_jsonb` shape (post-AI-02, with Stage 1 as no-op) is:
 }
 ```
 
-`summary_jsonb.title_block` and `summary_jsonb.counters.stage_1_*` are intentionally absent in the current chain (no Stage 1 work runs). They will return as part of AI-02b. `summary_jsonb.pause` is also unused — the only producer was the removed Stage 1 detector.
+`summary_jsonb.stages.title_block` is intentionally absent — there is no `stage_title_block` in the counted chain. The `pipeline_prep_auto_name` hook (AI-02b) is best-effort and not represented as a counted stage; its work surfaces via the `sheets.auto_named` Liveblocks broadcast and the per-method counters in `ReextractCounters`. `summary_jsonb.pause` is unused.
 
 ---
 
@@ -208,6 +243,10 @@ The frontend listens via `useEventListener` and merges the broadcast into a poll
 
 ---
 
-## Out of scope for AI-02
+## Out of scope for AI-03
 
-Title-block detection / manual override (deferred to [AI-02b](../../sprints/ai/sprint-ai-02b.md)), schedule + legend extraction (AI-03), the condition resolver (AI-04), the AI Layer overlays + review panel (AI-05), and element detection itself (AI-06 through AI-08). Stages 1 and 3-5 in the chain still have no-op bodies that future sprints will fill in without touching the chain wiring.
+The condition resolver (AI-04), the AI Layer overlays + review panel (AI-05), and element detection itself (AI-06 through AI-08). `stage_element_detection` and `stage_resolver_and_layer_write` remain no-op bodies that those sprints will fill in without touching the chain wiring.
+
+Optional AI-03 follow-ons: a "Set legend region" manual fallback for sheets where `ai_legend_detector` returns nothing useful (AI-03b), and the sheet classifier accuracy fix + image-only legend OCR + non-rectangular symbol shapes (AI-03c). Both are gated on real-data evidence rather than scheduled today.
+
+The customer-facing UI for inspecting `extracted_schedules` / `extracted_legends` is intentionally limited to the owner+admin internal debug page (`/internal/ai/runs/[runId]/extractions`). The customer-facing review surface lands with AI-05 (the AI Layer overlay).

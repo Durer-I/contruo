@@ -18,6 +18,7 @@ from app.models.ai_run import AiRun
 from app.models.ai_layer_item import AiLayerItem
 from app.models.extracted_schedule import ExtractedSchedule
 from app.models.extracted_legend import ExtractedLegend
+from app.models.extracted_legend_variant import ExtractedLegendVariant
 from app.models.ai_stage_cache import AiStageCache
 
 __all__ = [
@@ -42,5 +43,6 @@ __all__ = [
     "AiLayerItem",
     "ExtractedSchedule",
     "ExtractedLegend",
+    "ExtractedLegendVariant",
     "AiStageCache",
 ]

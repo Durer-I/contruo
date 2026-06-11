@@ -9,6 +9,7 @@ from app.api.v1 import (
     export_routes,
     health,
     internal_ai,
+    internal_ai_extractions,
     liveblocks,
     measurements,
     org,
@@ -40,5 +41,6 @@ protected.include_router(liveblocks.router)
 protected.include_router(billing.router, tags=["billing"])
 protected.include_router(ai_runs.router, tags=["ai-runs"])
 protected.include_router(internal_ai.router, tags=["internal-ai"])
+protected.include_router(internal_ai_extractions.router, tags=["internal-ai"])
 
 api_router.include_router(protected)

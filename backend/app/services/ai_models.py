@@ -373,11 +373,103 @@ class AnthropicVisionModel:
         prompt: str,
         schema: dict[str, Any],
     ) -> dict[str, Any]:
+        """Extract structured JSON from an image (e.g. a lineless schedule).
+
+        Uses the same vendor as ``classify_image`` -- Anthropic doesn't offer
+        OpenAI-style strict json_schema mode, so we ask for JSON in the system
+        prompt and defensively parse. Cost / token usage is recorded on the
+        active run via ``with_cost_tracking``.
+
+        Wired in Sprint AI-03 for ``ai_schedule_extractor``'s vision fallback
+        when pdfplumber fails to find a table on a sheet that the keyword
+        filter says contains a schedule.
+        """
         self._ensure_configured()
-        with with_cost_tracking("anthropic_vision.extract_structured"):
-            raise NotImplementedError(
-                "AnthropicVisionModel.extract_structured is wired in Sprint AI-03"
+        with with_cost_tracking("anthropic_vision.extract_structured") as cost:
+            try:
+                import anthropic  # type: ignore[import-untyped]
+            except ImportError as exc:  # pragma: no cover -- declared in requirements.txt
+                raise RuntimeError(
+                    "anthropic SDK is not installed; pip install anthropic"
+                ) from exc
+
+            client = anthropic.Anthropic(api_key=self._api_key)
+            schema_json = json.dumps(schema, indent=2)
+            system_prompt = (
+                "You extract structured data from construction drawings. "
+                "Return a JSON object that matches this schema EXACTLY. Output ONLY "
+                "the JSON -- no prose, no code fences.\n\nSchema:\n" + schema_json
             )
+            image_b64 = base64.standard_b64encode(image_bytes).decode("ascii")
+            response = client.messages.create(
+                model=self.model_id,
+                # Schedules can have 40+ rows / 12+ columns -- 4x the classify
+                # budget. Empirically gpt-4o on a dense equipment schedule uses
+                # ~3k output tokens, so 4096 is a safe ceiling.
+                max_tokens=4096,
+                system=system_prompt,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": image_b64,
+                                },
+                            },
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ],
+            )
+
+            usage = getattr(response, "usage", None)
+            input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+            output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+            settings = get_settings()
+            input_cents = (
+                input_tokens / 1000.0 * settings.ai_anthropic_vision_input_per_1k_cents
+            )
+            output_cents = (
+                output_tokens / 1000.0 * settings.ai_anthropic_vision_output_per_1k_cents
+            )
+            cost.cost_cents = _round_up_cents(input_cents + output_cents)
+            cost.tokens_used = input_tokens + output_tokens
+            cost.metadata = {
+                "model_id": self.model_id,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+
+            content_blocks = getattr(response, "content", None) or []
+            text_chunks: list[str] = []
+            for block in content_blocks:
+                btype = getattr(block, "type", None) or (
+                    block.get("type") if isinstance(block, dict) else None
+                )
+                if btype != "text":
+                    continue
+                btext = getattr(block, "text", None) or (
+                    block.get("text") if isinstance(block, dict) else None
+                )
+                if btext:
+                    text_chunks.append(str(btext))
+
+            raw = "".join(text_chunks).strip()
+            if not raw:
+                raise RuntimeError(
+                    "AnthropicVisionModel.extract_structured: empty response body"
+                )
+            try:
+                return json.loads(_strip_code_fences(raw))
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    "AnthropicVisionModel.extract_structured: response was not JSON: "
+                    f"{raw[:200]}"
+                ) from exc
 
     def analyze_region(
         self,
@@ -664,6 +756,31 @@ def get_llm_model() -> LLMModel:
     )
 
 
+def get_schedules_llm() -> LLMModel:
+    """Dedicated LLM for the schedule tag-column tie-break (Sprint AI-03).
+
+    Decoupled from ``get_llm_model`` for the same reason as ``get_title_block_llm``:
+    the tag-column scorer hands the LLM a small, well-typed schema (a list of
+    column headers + a few sample rows, asking which index is the row key)
+    and OpenAI's strict json_schema mode is the right tool. ``AnthropicLLMModel.structured_output``
+    isn't wired yet -- when it is, flipping to Anthropic is a config change only.
+
+    Honors ``ai_schedules_llm_provider`` / ``ai_schedules_llm_model``.
+    """
+    settings = get_settings()
+    provider = settings.ai_schedules_llm_provider
+    cls = _resolve("schedules_llm", provider, _LLM_PROVIDERS)
+    api_key = _api_key_for_provider(provider)
+    if cls is OpenAILLMModel:
+        return cls(  # type: ignore[return-value]
+            model_id=settings.ai_schedules_llm_model,
+            api_key=api_key,
+            timeout_s=settings.ai_openai_llm_timeout_s,
+            max_retries=settings.ai_openai_llm_max_retries,
+        )
+    return cls(model_id=settings.ai_schedules_llm_model, api_key=api_key)
+
+
 def get_title_block_llm() -> LLMModel:
     """Dedicated LLM for the title-block cleanup pass (Sprint AI-02b).
 
@@ -689,6 +806,27 @@ def get_title_block_llm() -> LLMModel:
             max_retries=settings.ai_openai_llm_max_retries,
         )
     return cls(model_id=settings.ai_title_block_llm_model, api_key=api_key)
+
+
+def get_legend_cleanup_llm() -> LLMModel:
+    """LLM for filtering prototype legend rows (Sprint AI-03, GPT cleanup).
+
+    Same OpenAI strict-JSON pattern as title-block / schedules. Non-OpenAI
+    providers are rejected at the call site in ``ai_legend_cleanup`` with a
+    logged fallback to unfiltered prototype output.
+    """
+    settings = get_settings()
+    provider = settings.ai_legend_cleanup_llm_provider
+    cls = _resolve("legend_cleanup_llm", provider, _LLM_PROVIDERS)
+    api_key = _api_key_for_provider(provider)
+    if cls is OpenAILLMModel:
+        return cls(  # type: ignore[return-value]
+            model_id=settings.ai_legend_cleanup_llm_model,
+            api_key=api_key,
+            timeout_s=settings.ai_openai_llm_timeout_s,
+            max_retries=settings.ai_openai_llm_max_retries,
+        )
+    return cls(model_id=settings.ai_legend_cleanup_llm_model, api_key=api_key)
 
 
 def model_versions_snapshot() -> dict[str, str]:

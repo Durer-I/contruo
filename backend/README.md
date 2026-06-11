@@ -105,6 +105,32 @@ The "Auto-name sheets" button in the plan viewer runs a standalone Celery task (
 
 **`OPENAI_API_KEY` is required on the worker process** (not just the API process) when the title-block LLM pass is enabled with the `openai` provider. The key is read lazily on first call, so an unset key produces a clean per-sheet `llm_failed` counter rather than crashing the task -- the heuristic answer is still written.
 
+#### AI-03 (schedule + legend extraction)
+
+Stage 3a of the AI Auto-Takeoff pipeline. Schedule and legend sheets are filtered by `sheet_name` keyword (matches the prototype in `AI/controller/title.py`), then pdfplumber extracts schedule tables (heuristic-first: `lines_strict` -> `lines` -> `text` -> vision fallback). Legend symbols use the algorithm from `AI/controller/legends.py` (rect grouping + right-adjacent labels), then an optional OpenAI strict-JSON pass drops false-positive rows (same intent as the commented GPT block in that script). Each detected symbol is cropped at multiple scales / rotations and stored in Supabase Storage so AI-06's symbol detector can template-match without re-rendering at match time.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `AI_SCHEDULES_LLM_PROVIDER` | `openai` | LLM provider for the tag-column / description-column tie-break. Decoupled from `AI_LLM_PROVIDER` for the same reason as the title-block LLM. |
+| `AI_SCHEDULES_LLM_MODEL` | `gpt-4o-mini` | Model id for the schedule LLM. Strict-JSON schema mode is used. |
+| `AI_SCHEDULE_VISION_DPI` | `250` | DPI for the vision fallback render of a lineless schedule. Matches `AI/controller/find_tables.py`. |
+| `AI_SCHEDULE_TABLE_MIN_QUALITY` | `0.55` | pdfplumber row-width-variance score below which a candidate counts as a real table. Higher = stricter. |
+| `AI_TAG_COLUMN_LLM_MARGIN` | `0.15` | When the heuristic top score is within this margin of the runner-up, the LLM breaks the tie. |
+| `AI_TAG_COLUMN_LLM_SKIP_ABOVE` | `0.85` | Heuristic scores above this are accepted without LLM regardless of margin. |
+| `AI_LEGEND_CROP_DPI` | `300` | DPI for legend symbol PNG crops. AI-06's template matcher expects this. |
+| `AI_LEGEND_MERGE_TOLERANCE` | `2.0` | pdfplumber rect grouping tolerance (pts); matches `AI/controller/legends.py` (`tolerance=2`). |
+| `AI_LEGEND_CLEANUP_ENABLED` | `true` | When `false`, skips the GPT false-positive filter and uses raw prototype output only (no extra LLM cost). |
+| `AI_LEGEND_CLEANUP_LLM_PROVIDER` | `openai` | Legend cleanup uses OpenAI strict JSON-schema mode (same stack as title-block / schedules). Non-OpenAI providers skip cleanup with a warning. |
+| `AI_LEGEND_CLEANUP_LLM_MODEL` | `gpt-4o-mini` | Model id for legend cleanup. |
+| `AI_LEGEND_MIN_CONFIDENCE` | `0.6` | **Unused** by the current prototype-based detector (candidates use confidence `1.0`). Kept for forward compatibility. |
+| `AI_LEGEND_SYMBOL_MIN_PTS` | `8.0` | **Unused** by the detector; the prototype uses a fixed 16 pt minimum. |
+| `AI_LEGEND_SYMBOL_MAX_PTS` | `220.0` | **Unused** by the prototype detector. |
+| `AI_LEGEND_LABEL_LLM_MIN_CONFIDENCE` | `0.6` | Reserved for future OCR-label cleanup; not used on the text-layer prototype path. |
+
+`AI_LEGEND_VARIANT_SCALES` and `AI_LEGEND_VARIANT_ROTATIONS` are defined in code for a future multi-scale template grid (AI-06). Stage 3a only persists the primary (1.00x / 0°) PNG per symbol; the table `extracted_legend_variants` is unused until that work lands.
+
+The Stage 3a output (rows in `extracted_schedules` and `extracted_legends` with one primary template PNG per symbol in storage) feeds AI-04 (resolver) and future AI-06 (symbol detector). Re-runs on unchanged sheets hit `ai_stage_cache` and cost zero.
+
 ---
 
 ## Database migrations

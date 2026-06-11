@@ -48,7 +48,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models.plan import Plan
 from app.models.sheet import Sheet
-from app.services import ai_models, ai_ocr, ai_sheet_classifier
+from app.services import ai_models, ai_ocr, ai_sheet_text_llm
 from app.utils.pdf import extract_text_in_rect, render_clip_to_png
 
 try:
@@ -203,6 +203,7 @@ class ReextractCounters:
     empty: int = 0
     llm_failed: int = 0
     written: int = 0
+    sheet_text_llm_cache_hits: int = 0
     errors: list[dict[str, Any]] = field(default_factory=list)
 
     def as_summary(self) -> dict[str, Any]:
@@ -215,6 +216,7 @@ class ReextractCounters:
             "empty": self.empty,
             "llm_failed": self.llm_failed,
             "written": self.written,
+            "sheet_text_llm_cache_hits": self.sheet_text_llm_cache_hits,
             "errors": self.errors[:10],  # cap; full list lives in worker logs
         }
 
@@ -666,18 +668,15 @@ def reextract_titles_for_plan(
     overwrite_manual: bool = False,
     llm_fallback: bool = True,
 ) -> ReextractCounters:
-    """Auto-name sheets in ``plan`` from each page's title region.
+    """Apply full-page text extraction + batched OpenAI sheet classification/naming.
 
-    Rows with ``sheet_name_source = 'manual'`` are skipped unless
-    ``overwrite_manual`` is True (user opted in from the auto-name dialog).
+    Same underlying path as AI Stage 2 (``execute_sheet_text_llm_for_plan``).
+    Rows with ``sheet_name_source='manual'`` do not receive name updates unless
+    ``overwrite_manual`` is True; classification columns still update.
 
-    ``pdf_bytes`` is the raw PDF (the caller fetches from storage so this
-    function stays IO-free apart from the DB writes). The function flushes
-    after each sheet so a mid-loop crash still persists prior writes; the
-    caller commits at the end (or rolls back on a hard failure).
+    ``llm_fallback`` is retained for API compatibility and ignored.
     """
-    if fitz is None:
-        raise RuntimeError("PyMuPDF (fitz) is not installed")
+    _ = llm_fallback
 
     counters = ReextractCounters()
     if not pdf_bytes:
@@ -694,88 +693,42 @@ def reextract_titles_for_plan(
     if not sheets:
         return counters
 
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    for sheet in sheets:
+        if not _sheet_eligible_for_auto_name(sheet, overwrite_manual=overwrite_manual):
+            counters.manual_skipped += 1
+
+    eligible = {
+        s.id: _sheet_eligible_for_auto_name(s, overwrite_manual=overwrite_manual)
+        for s in sheets
+    }
+
     try:
-        for sheet in sheets:
-            if not _sheet_eligible_for_auto_name(sheet, overwrite_manual=overwrite_manual):
-                counters.manual_skipped += 1
-                continue
+        cache_hits, _llm_by_page, rowcount = (
+            ai_sheet_text_llm.execute_sheet_text_llm_for_plan(
+                session,
+                org_id=plan.org_id,
+                sheets=sheets,
+                pdf_bytes=pdf_bytes,
+                sheet_eligible_for_names=eligible,
+            )
+        )
+    except Exception as exc:
+        logger.exception(
+            "reextract_titles_for_plan: sheet text LLM failed plan=%s", plan.id
+        )
+        counters.errors.append({"error": str(exc)[:200]})
+        return counters
 
-            page_index = (sheet.page_number or 1) - 1
-            if page_index < 0 or page_index >= doc.page_count:
-                counters.errors.append(
-                    {"sheet_id": str(sheet.id), "error": "page_out_of_range"}
-                )
-                continue
+    counters.sheet_text_llm_cache_hits = cache_hits
+    counters.written = rowcount
+    counters.llm = len(sheets)
 
-            try:
-                page = doc.load_page(page_index)
-                result = extract_title_for_sheet(
-                    page,
-                    ocr_fallback=True,
-                    llm_fallback=llm_fallback,
-                )
-            except Exception as exc:
-                logger.exception(
-                    "reextract_titles_for_plan: sheet=%s page=%s failed",
-                    sheet.id,
-                    sheet.page_number,
-                )
-                counters.errors.append(
-                    {"sheet_id": str(sheet.id), "error": str(exc)[:200]}
-                )
-                continue
-
-            # Method counters.
-            if result.method == "text_layer":
-                counters.text_layer += 1
-            elif result.method == "ocr":
-                counters.ocr += 1
-            elif result.method == "llm":
-                counters.llm += 1
-            elif result.method == "llm_failed":
-                counters.llm_failed += 1
-            elif result.method == "empty":
-                counters.empty += 1
-
-            # COALESCE write: never wipe an existing value with None.
-            wrote_anything = False
-            if result.name:
-                sheet.sheet_name = result.name
-                wrote_anything = True
-            if result.number:
-                sheet.sheet_number = result.number
-                wrote_anything = True
-
-            if sheet.sheet_number:
-                inferred = ai_sheet_classifier.infer_discipline_from_sheet_number(
-                    sheet.sheet_number
-                )
-                if inferred is not None:
-                    sheet.discipline = inferred
-                    sheet.classification_method = "sheet_number"
-                    sheet.classification_confidence = 0.95
-                    wrote_anything = True
-            if wrote_anything:
-                sheet.sheet_name_source = "auto"
-                counters.written += 1
-                # Flush after each sheet so partial progress survives a crash
-                # mid-loop. Final commit is the caller's responsibility.
-                try:
-                    session.flush()
-                except Exception:
-                    logger.exception(
-                        "reextract_titles_for_plan: flush failed for sheet=%s", sheet.id
-                    )
-                    session.rollback()
-                    counters.errors.append(
-                        {"sheet_id": str(sheet.id), "error": "flush_failed"}
-                    )
-    finally:
-        try:
-            doc.close()
-        except Exception:  # pragma: no cover
-            pass
+    try:
+        session.flush()
+    except Exception:
+        logger.exception("reextract_titles_for_plan: flush failed plan=%s", plan.id)
+        session.rollback()
+        counters.errors.append({"error": "flush_failed"})
 
     return counters
 

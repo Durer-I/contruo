@@ -37,12 +37,17 @@ class ExtractedLegend(Base):
     )
     bbox_pdf: Mapped[dict] = mapped_column(JSONB, nullable=False)
     label: Mapped[str] = mapped_column(String(255), nullable=False)
-    #: Supabase Storage path: ``legends/{plan_id}/{legend_label}.png``.
+    #: Storage path of the *primary* (1.00x scale, 0deg rotation) symbol PNG.
+    #: Multi-scale / multi-rotation siblings live in ``extracted_legend_variants``
+    #: so AI-04's resolver -- which only needs the label -- doesn't drag every
+    #: variant across the wire.
     template_storage_path: Mapped[str] = mapped_column(Text, nullable=False)
-    #: SHA-256 of the cropped template bytes -- drives cache invalidation when
-    #: a re-uploaded plan revision changes the legend artwork.
+    #: SHA-256 of the *primary* template bytes. Variants carry their own hash.
+    #: Drives cache invalidation when a re-uploaded plan revision changes the
+    #: legend artwork.
     template_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    #: 'vector' | 'raster' | 'vision'
+    #: ``'vector'`` | ``'raster'`` | ``'vision'`` -- which detection branch in
+    #: ``ai_legend_detector`` produced this row.
     extraction_method: Mapped[str] = mapped_column(String(40), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

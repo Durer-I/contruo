@@ -182,7 +182,6 @@ def test_pipeline_chain_stages_in_order():
     # Celery's chain stores its tasks on .tasks. Prep -> start -> stages -> finalize.
     task_names = [t.name for t in chain.tasks]
     assert task_names == [
-        "ai_pipeline.pipeline_prep_auto_name",
         "ai_pipeline.start_ai_run",
         "ai_pipeline.stage_classification",
         "ai_pipeline.stage_schedules_legends",
@@ -190,7 +189,7 @@ def test_pipeline_chain_stages_in_order():
         "ai_pipeline.stage_resolver_and_layer_write",
         "ai_pipeline.finalize_ai_run",
     ]
-    assert chain.tasks[1].immutable is True
+    assert chain.tasks[0].immutable is True
 
 
 def test_pipeline_stages_constant_matches_chain_order():
@@ -204,3 +203,31 @@ def test_pipeline_stages_constant_matches_chain_order():
     )
     assert ai_pipeline.PIPELINE_STAGES == expected_run_stages
     assert ai_pipeline.TOTAL_STAGES == 5
+
+
+# ── Stage schedules + legends body (Sprint AI-03) ────────────────────────────
+
+
+def test_stage_schedules_legends_body_skips_when_no_matching_sheets():
+    """The body short-circuits to a cache-hit when keyword filter empty."""
+    plan = _make_plan(uuid.uuid4())
+    run = _make_run(plan_id=plan.id, status="running")
+    session = MagicMock()
+
+    with (
+        patch.object(
+            ai_pipeline.ai_sheet_filter, "select_schedule_sheets", return_value=[]
+        ),
+        patch.object(
+            ai_pipeline.ai_sheet_filter, "select_legend_sheets", return_value=[]
+        ),
+        patch.object(
+            ai_pipeline.ai_run_service, "merge_summary_jsonb_sync"
+        ) as merge_summary,
+    ):
+        meta = ai_pipeline._stage_schedules_legends_body(session, run, plan)
+
+    assert meta == {"cache_hit": True}
+    merge_summary.assert_called_once()
+    payload = merge_summary.call_args.kwargs["payload"]
+    assert payload["schedules_legends"]["skipped"] == "no_matching_sheets"

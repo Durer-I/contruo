@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     #: classification call. 6 is a balance between prompt clarity and
     #: per-call cost; raise cautiously -- the schema gets messy past ~10.
     ai_vision_classify_batch_size: int = 6
+    #: Stage 2 sheet classification + naming via PyMuPDF text + OpenAI Responses.
+    ai_sheet_text_classify_model: str = "gpt-5.4-mini"
+    ai_sheet_text_classify_batch_size: int = 10
     #: Anthropic Claude Sonnet pricing (cents per 1k tokens). Config-driven so
     #: pricing changes don't require a deploy. Defaults match the published
     #: Sonnet 4.5 rates as of 2026-04 ($3/Mtok input, $15/Mtok output).
@@ -129,6 +132,67 @@ class Settings(BaseSettings):
     #: from stalling the whole re-extract task.
     ai_openai_llm_timeout_s: float = 20.0
     ai_openai_llm_max_retries: int = 2
+
+    # AI-03: Stage 3a -- Schedule + Legend Extraction ────────────────────────
+    # All thresholds are tuned against the prototypes in ``AI/controller/`` and
+    # the locked-decisions cost ceilings in ``features/ai/ai-auto-takeoff.md``.
+    # Heuristics-first: ``vision`` / ``llm`` only fire when the deterministic
+    # pass falls below the threshold.
+    #: LLM provider + model for the schedule tag-column fallback. Decoupled
+    #: from the global LLM (Anthropic) for the same reason as title-block:
+    #: structured-output JSON enforcement is OpenAI's strong suit, and a
+    #: schedule with 12 columns and 40 rows fits comfortably in gpt-4o-mini's
+    #: context window for cents.
+    ai_schedules_llm_provider: str = "openai"
+    ai_schedules_llm_model: str = "gpt-4o-mini"
+    #: DPI for the vision fallback render of a lineless schedule. 250 matches
+    #: the prototype (``AI/controller/find_tables.py``) and keeps small column
+    #: headers legible without exploding the multimodal token count.
+    ai_schedule_vision_dpi: int = 250
+    #: pdfplumber's row-width-variance score below which a candidate is treated
+    #: as a "real" table. Higher = stricter (less garbage). Tuned against the
+    #: prototype's behaviour on door / window / equipment schedules.
+    ai_schedule_table_min_quality: float = 0.55
+    #: When the deterministic 4-feature scorer's top tag-column score is within
+    #: this margin of the runner-up the LLM fallback breaks the tie. Pure
+    #: heuristic ambiguity is the only thing we pay tokens for.
+    ai_tag_column_llm_margin: float = 0.15
+    #: Above this *deterministic* tag-column score we skip the LLM entirely
+    #: even when the margin is tight -- a strong signal stands on its own.
+    ai_tag_column_llm_skip_above: float = 0.85
+
+    #: DPI for legend symbol crops. 300 is the prototype default
+    #: (``AI/controller/legends.py``) and the resolution AI-06's template
+    #: matcher expects.
+    ai_legend_crop_dpi: int = 300
+    #: Below this confidence the legend region is silently skipped (logged in
+    #: the run summary). Manual override is deferred to AI-03b.
+    ai_legend_min_confidence: float = 0.6
+    #: Min/max symbol bbox sides (PDF user-space pts). Filters detector noise --
+    #: tiny rectangles are usually drawing artefacts; huge ones are sheet borders.
+    ai_legend_symbol_min_pts: float = 8.0
+    ai_legend_symbol_max_pts: float = 220.0
+    #: Coordinate-merge tolerance (pts) for the prototype's rounded (x0, x1)
+    #: grouping in ``AI/controller/legends.py``. The script uses ``2``.
+    ai_legend_merge_tolerance: float = 2.0
+    #: When true, run the GPT false-positive filter on prototype merged results
+    #: (OpenAI strict JSON). When false, persistence uses raw prototype output only.
+    ai_legend_cleanup_enabled: bool = True
+    #: LLM for legend cleanup (same rationale as schedules/title-block: OpenAI
+    #: strict json_schema). Other providers fall back to skipping cleanup.
+    ai_legend_cleanup_llm_provider: str = "openai"
+    ai_legend_cleanup_llm_model: str = "gpt-4o-mini"
+    #: Multi-scale variant grid for AI-06 template matching. Order matters --
+    #: 1.00 must be present so the resolver's "primary" template stays a real
+    #: peer in ``extracted_legend_variants``.
+    ai_legend_variant_scales: tuple[float, ...] = (0.70, 0.85, 1.00, 1.15, 1.30)
+    #: Rotation grid in degrees; 90deg increments are sufficient for symbols
+    #: that are placed orthogonally (the overwhelming majority of MEP/structural
+    #: symbols on construction docs).
+    ai_legend_variant_rotations: tuple[int, ...] = (0, 90, 180, 270)
+    #: Below this OCR confidence the LLM cleanup pass rewrites the legend
+    #: label. ``0.0`` would cleanup every label which is wasteful.
+    ai_legend_label_llm_min_confidence: float = 0.6
 
     @property
     def is_development(self) -> bool:

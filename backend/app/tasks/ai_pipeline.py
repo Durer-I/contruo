@@ -2,21 +2,17 @@
 
 Chained tasks model the pipeline (see ``ai_run_service.PIPELINE_STAGES``):
 
-0. ``ai_pipeline.pipeline_prep_auto_name`` -- best-effort title-block auto-name
-   (same work as ``reextract_plan_titles``); failures are logged and do not stop
-   the chain. Skipped when ``ai_auto_name_enabled`` is off.
 1. ``ai_pipeline.start_ai_run`` -- transition queued -> running, acquire the
    per-plan advisory lock, broadcast the status change.
-2. ``ai_pipeline.stage_classification`` -- AI-02 (sheet classification).
+2. ``ai_pipeline.stage_classification`` -- AI-02 (sheet text + OpenAI classification/naming).
 3. ``ai_pipeline.stage_schedules_legends`` -- AI-03.
 4. ``ai_pipeline.stage_element_detection`` -- AI-06/AI-07/AI-08.
 5. ``ai_pipeline.stage_resolver_and_layer_write`` -- AI-04/AI-05.
 6. ``ai_pipeline.finalize_ai_run`` -- transition to completed/failed, release
    lock, broadcast final status.
 
-Standalone ``POST .../auto-name-sheets`` still queues ``reextract_plan_titles``
-directly; the prep step reuses that task synchronously so sheet names are fresh
-before classification without adding a counted ``PIPELINE_STAGES`` stage.
+Standalone ``POST .../auto-name-sheets`` queues ``reextract_plan_titles``, which
+uses the same sheet-text LLM path as Stage 2.
 
 Each stage:
 
@@ -51,15 +47,22 @@ from app.models.plan import Plan
 from app.models.sheet import Sheet
 from app.services import (
     ai_cache,
+    ai_legend_detector,
+    ai_legend_extractor,
     ai_models,
     ai_run_service,
+    ai_schedule_extractor,
     ai_sheet_classifier,
+    ai_sheet_filter,
+    ai_sheet_text_llm,
+    ai_tag_column,
     ai_title_block,
     liveblocks_service,
 )
 from app.tasks.celery_app import celery_app
 from app.utils import storage
-from app.utils.pdf import render_thumbnail_for_classification
+
+from app.services.ai_title_block import _sheet_eligible_for_auto_name
 
 try:
     import fitz  # type: ignore[import-untyped]
@@ -68,12 +71,12 @@ except ImportError:  # pragma: no cover -- declared in requirements.txt
 
 logger = logging.getLogger(__name__)
 
-
-#: Stage versions baked into cache keys. Bump when the algorithm changes
-#: in a way that would invalidate prior cache entries (e.g. a heuristic
-#: refactor). The version is *separate* from the model version so a pure
-#: code change can invalidate without forcing a model swap.
-SHEET_CLASSIFY_VERSION = "lexical_v1"
+#: Sheet classification cache version lives in ``ai_sheet_text_llm.SHEET_TEXT_CLASSIFY_VERSION``.
+#: AI-03 stage version. Bumped when the schedule extractor / tag-column
+#: scorer / legend detector algorithm changes in a backward-incompatible way.
+#: The model version (vision + LLM) is captured separately by the cache so a
+#: pure-code change here invalidates cleanly without forcing a model swap.
+SCHEDULES_LEGENDS_VERSION = "v3"
 
 
 # ─── Sync engine (shared with pdf_processing pattern) ────────────────────────
@@ -419,14 +422,7 @@ def _noop_stage(_session: Session, _run: AiRun, _plan: Plan) -> dict[str, Any]:
 def _stage_classification_body(
     session: Session, run: AiRun, plan: Plan
 ) -> dict[str, Any]:
-    """Sheet classification: lexical-first / vision-fallback for every sheet.
-
-    Cache key is per-sheet content hash + ``SHEET_CLASSIFY_VERSION``. A re-run
-    on unchanged sheets reads from cache (zero cost). Vision is invoked only
-    on the bucket of (low-lexical-confidence AND interesting-sheet-type)
-    sheets; cover/index/spec sheets are written from lexical even at low
-    confidence.
-    """
+    """Stage 2: PyMuPDF structured text + batched OpenAI Responses per sheet."""
     settings = get_settings()
     sheets = list(
         session.execute(
@@ -440,163 +436,70 @@ def _stage_classification_body(
     if not sheets:
         return {"cache_hit": True}
 
-    model_version = ai_models.model_versions_snapshot().get("vision", "vision:unknown")
+    pdf_bytes = storage.download_bytes(storage.PLANS_BUCKET, plan.storage_path)
 
-    lexical_results: list[ai_sheet_classifier.ClassificationResult] = []
-    cache_hits = 0
-    final_results: list[ai_sheet_classifier.ClassificationResult] = []
-    needs_vision: list[ai_sheet_classifier.SheetForClassification] = []
-
-    # First pass: try cache, then lexical.
-    for sheet in sheets:
-        sheet_hash = ai_cache.compute_sheet_content_hash(sheet)
-        cached = ai_cache.cache_get(
-            session,
-            org_id=run.org_id,
-            content_hash=sheet_hash,
-            stage="classification",
-            model_version=model_version,
-        )
-        if cached and {"discipline", "sheet_type"} <= cached.keys():
-            try:
-                conf = float(cached.get("confidence") or 0.0)
-            except (TypeError, ValueError):
-                conf = 0.0
-            cached_result = ai_sheet_classifier.ClassificationResult(
-                sheet_id=sheet.id,
-                discipline=str(cached["discipline"]),
-                sheet_type=str(cached["sheet_type"]),
-                confidence=conf,
-                method=str(cached.get("method") or "lexical"),
-                notes="cache",
-            )
-            cache_hits += 1
-            final_results.append(cached_result)
-            continue
-
-        lexical = ai_sheet_classifier.classify_lexical(sheet.id, sheet.sheet_name)
-        lexical_results.append(lexical)
-        if ai_sheet_classifier.needs_vision_fallback(
-            lexical, threshold=settings.ai_classification_confidence_threshold
-        ):
-            # Defer to the vision pass. Note: we still stash the lexical
-            # guess so a vision failure falls back cleanly.
-            needs_vision.append(
-                ai_sheet_classifier.SheetForClassification(
-                    sheet_id=sheet.id,
-                    sheet_name=sheet.sheet_name,
-                    content_hash=ai_cache.compute_sheet_content_hash(sheet),
-                )
-            )
-        else:
-            final_results.append(lexical)
-
-    lexical_by_id = {r.sheet_id: r for r in lexical_results}
-    sheet_by_id = {s.id: s for s in sheets}
-
-    # Render thumbnails for the vision bucket (only if non-empty).
-    if needs_vision:
-        try:
-            pdf_bytes = storage.download_bytes(
-                storage.PLANS_BUCKET, plan.storage_path
-            )
-        except Exception:
-            logger.exception(
-                "stage_classification: PDF download failed plan=%s", plan.id
-            )
-            # Drop the vision bucket back to lexical to keep the pipeline moving.
-            for s in needs_vision:
-                final_results.append(lexical_by_id[s.sheet_id])
-            needs_vision = []
-            pdf_bytes = b""
-
-        if pdf_bytes:
-            if fitz is None:
-                raise RuntimeError("PyMuPDF (fitz) is not installed")
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            try:
-                rendered: list[ai_sheet_classifier.SheetForClassification] = []
-                for s in needs_vision:
-                    sheet_obj = sheet_by_id.get(s.sheet_id)
-                    if sheet_obj is None:
-                        continue
-                    page_index = (sheet_obj.page_number or 1) - 1
-                    if page_index < 0 or page_index >= doc.page_count:
-                        final_results.append(lexical_by_id[s.sheet_id])
-                        continue
-                    try:
-                        page = doc.load_page(page_index)
-                        thumb = render_thumbnail_for_classification(page)
-                    except Exception:
-                        logger.exception(
-                            "stage_classification: thumb render failed sheet=%s",
-                            s.sheet_id,
-                        )
-                        final_results.append(lexical_by_id[s.sheet_id])
-                        continue
-                    rendered.append(
-                        ai_sheet_classifier.SheetForClassification(
-                            sheet_id=s.sheet_id,
-                            sheet_name=s.sheet_name,
-                            content_hash=s.content_hash,
-                            thumbnail_png=thumb,
-                        )
-                    )
-
-                if rendered:
-                    try:
-                        vision_model = ai_models.get_vision_model()
-                        vision_results = ai_sheet_classifier.classify_vision_batch(
-                            rendered,
-                            vision_model=vision_model,
-                            batch_size=settings.ai_vision_classify_batch_size,
-                            lexical_by_id=lexical_by_id,
-                        )
-                    except Exception:
-                        logger.exception(
-                            "stage_classification: vision pass failed; falling back to lexical"
-                        )
-                        vision_results = [lexical_by_id[r.sheet_id] for r in rendered]
-                    final_results.extend(vision_results)
-            finally:
-                try:
-                    doc.close()
-                except Exception:  # pragma: no cover
-                    pass
-
-    # Bulk update sheets.
-    deduped: dict[uuid.UUID, ai_sheet_classifier.ClassificationResult] = {}
-    for r in final_results:
-        # Last write wins -- vision results follow lexical on the same sheet
-        # so vision overrides cleanly.
-        deduped[r.sheet_id] = r
-    ai_sheet_classifier.bulk_upsert_classifications(session, deduped.values())
-
-    # Cache new (non-cache-sourced) results.
-    for r in deduped.values():
-        if r.notes == "cache":
-            continue
-        sheet_obj = sheet_by_id.get(r.sheet_id)
-        if sheet_obj is None:
-            continue
-        sheet_hash = ai_cache.compute_sheet_content_hash(sheet_obj)
-        ai_cache.cache_put(
-            session,
-            org_id=run.org_id,
-            content_hash=sheet_hash,
-            stage="classification",
-            model_version=model_version,
-            value={
-                "discipline": r.discipline,
-                "sheet_type": r.sheet_type,
-                "confidence": r.confidence,
-                "method": r.method,
-            },
-        )
+    eligible = {
+        s.id: _sheet_eligible_for_auto_name(s, overwrite_manual=False) for s in sheets
+    }
+    cache_hits, llm_by_page, _rows = ai_sheet_text_llm.execute_sheet_text_llm_for_plan(
+        session,
+        org_id=run.org_id,
+        sheets=sheets,
+        pdf_bytes=pdf_bytes,
+        sheet_eligible_for_names=eligible,
+    )
 
     counters = ai_sheet_classifier.ClassificationCounters()
-    for r in deduped.values():
-        counters.add(r, low_threshold=settings.ai_classification_confidence_threshold)
+    for sheet in sheets:
+        idx = int(sheet.page_number or 1) - 1
+        item = llm_by_page.get(idx)
+        if item:
+            num_str = item.get("sheet_number")
+            num_clean = (str(num_str).strip() if num_str is not None else "") or None
+            discipline = ai_sheet_classifier.infer_discipline_from_sheet_number(
+                num_clean
+            )
+            if discipline is None:
+                discipline = "other"
+            try:
+                conf = float(item.get("confidence") or 0.0)
+            except (TypeError, ValueError):
+                conf = 0.0
+            conf = max(0.0, min(1.0, conf))
+            st_llm = item.get("sheet_type")
+            sheet_type = ai_sheet_text_llm.coerce_sheet_type(
+                st_llm if isinstance(st_llm, str) else None
+            )
+            cat = item.get("category")
+            cat_str = str(cat).strip() if cat is not None else None
+            r = ai_sheet_classifier.ClassificationResult(
+                sheet_id=sheet.id,
+                discipline=discipline,
+                sheet_type=sheet_type,
+                confidence=conf,
+                method="text_llm",
+                notes="",
+            )
+            counters.add(
+                r,
+                low_threshold=settings.ai_classification_confidence_threshold,
+                category=cat_str or None,
+            )
+        else:
+            r = ai_sheet_classifier.ClassificationResult(
+                sheet_id=sheet.id,
+                discipline="other",
+                sheet_type="other",
+                confidence=0.0,
+                method="text_llm",
+                notes="no_llm_response",
+            )
+            counters.add(
+                r,
+                low_threshold=settings.ai_classification_confidence_threshold,
+                category=None,
+            )
+
     ai_run_service.merge_summary_jsonb_sync(
         session,
         ai_run_id=run.id,
@@ -609,6 +512,7 @@ def _stage_classification_body(
             "stage_2_total_sheets": counters.total,
             "stage_2_lexical": counters.lexical_count,
             "stage_2_vision": counters.vision_count,
+            "stage_2_text_llm": counters.text_llm_count,
             "stage_2_low_confidence": counters.low_confidence_count,
             "stage_2_cache_hits": cache_hits,
         },
@@ -625,10 +529,384 @@ def stage_classification(self, ai_run_id_str: str) -> str:
     )
 
 
+# ─── AI-03: Stage schedules + legends body ───────────────────────────────────
+
+
+def _stage_schedules_legends_body(
+    session: Session, run: AiRun, plan: Plan
+) -> dict[str, Any]:
+    """Stage 3a: extract schedule tables + legend symbols on the relevant sheets.
+
+    Pipeline:
+
+    1. Filter sheets by ``sheet_name`` keyword (``ai_sheet_filter``). The
+       AI-02 classifier output is intentionally NOT used as a gate here --
+       its accuracy issues are tracked under AI-03c, and the prototype
+       (``AI/controller/title.py``) proves keyword filtering is the right
+       choice for Stage 3a.
+    2. Download the plan PDF once; reuse the same bytes for pdfplumber
+       (table / rect detection) and PyMuPDF (legend cropping).
+    3. Per-sheet content-hash cache (separate keys for schedules + legends).
+       On hit: skip extraction + LLM; persistence still runs (idempotent
+       primary legend PNG upload, fresh DB rows tied to *this* ``ai_run_id``).
+    4. Persist ``extracted_schedules`` + ``extracted_legends`` rows. (Scale /
+       rotation variant assets and ``extracted_legend_variants`` are deferred.)
+       Failures on individual sheets are
+       logged and swallowed -- one bad sheet does not fail the stage.
+    """
+    schedule_sheets = ai_sheet_filter.select_schedule_sheets(session, plan_id=plan.id)
+    legend_sheets = ai_sheet_filter.select_legend_sheets(session, plan_id=plan.id)
+
+    if not schedule_sheets and not legend_sheets:
+        ai_run_service.merge_summary_jsonb_sync(
+            session,
+            ai_run_id=run.id,
+            payload={
+                "schedules_legends": {
+                    "schedule_sheets": 0,
+                    "legend_sheets": 0,
+                    "skipped": "no_matching_sheets",
+                }
+            },
+        )
+        return {"cache_hit": True}
+
+    try:
+        pdf_bytes = storage.download_bytes(storage.PLANS_BUCKET, plan.storage_path)
+    except Exception:
+        logger.exception(
+            "stage_schedules_legends: PDF download failed plan=%s", plan.id
+        )
+        raise
+
+    if fitz is None:
+        raise RuntimeError("PyMuPDF (fitz) is not installed")
+    try:
+        import io as _io
+        import pdfplumber  # type: ignore[import-untyped]
+    except ImportError as exc:  # pragma: no cover -- declared in requirements.txt
+        raise RuntimeError("pdfplumber is not installed") from exc
+
+    model_versions = ai_models.model_versions_snapshot()
+    schedules_model_version = (
+        f"vision:{model_versions.get('vision', 'unknown')}|"
+        f"schedules_llm:{_settings.ai_schedules_llm_provider}:{_settings.ai_schedules_llm_model}"
+    )
+    _cleanup_part = "off"
+    if _settings.ai_legend_cleanup_enabled:
+        _cleanup_part = (
+            f"{_settings.ai_legend_cleanup_llm_provider}:"
+            f"{_settings.ai_legend_cleanup_llm_model}"
+        )
+    legends_model_version = (
+        f"detector:{SCHEDULES_LEGENDS_VERSION}|cleanup:{_cleanup_part}"
+    )
+
+    counters = {
+        "schedule_sheets": 0,
+        "schedule_sheets_with_tables": 0,
+        "schedules_extracted": 0,
+        "schedule_vision_fallbacks": 0,
+        "schedule_llm_tag_tiebreaks": 0,
+        "schedule_cache_hits": 0,
+        "legend_sheets": 0,
+        "legend_sheets_with_symbols": 0,
+        "legend_symbols_extracted": 0,
+        "legend_variants_written": 0,
+        "legend_cache_hits": 0,
+    }
+
+    fitz_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    plumber_doc = pdfplumber.open(_io.BytesIO(pdf_bytes))
+    try:
+        for sheet in schedule_sheets:
+            counters["schedule_sheets"] += 1
+            try:
+                _process_schedule_sheet(
+                    session=session,
+                    run=run,
+                    plan=plan,
+                    sheet=sheet,
+                    fitz_doc=fitz_doc,
+                    plumber_doc=plumber_doc,
+                    pdf_bytes=pdf_bytes,
+                    model_version=schedules_model_version,
+                    counters=counters,
+                )
+            except Exception:
+                logger.exception(
+                    "stage_schedules_legends: per-sheet schedule failure sheet_id=%s",
+                    sheet.id,
+                )
+
+        for sheet in legend_sheets:
+            counters["legend_sheets"] += 1
+            try:
+                _process_legend_sheet(
+                    session=session,
+                    run=run,
+                    plan=plan,
+                    sheet=sheet,
+                    fitz_doc=fitz_doc,
+                    plumber_doc=plumber_doc,
+                    pdf_bytes=pdf_bytes,
+                    model_version=legends_model_version,
+                    counters=counters,
+                )
+            except Exception:
+                logger.exception(
+                    "stage_schedules_legends: per-sheet legend failure sheet_id=%s",
+                    sheet.id,
+                )
+    finally:
+        try:
+            plumber_doc.close()
+        except Exception:  # pragma: no cover
+            pass
+        try:
+            fitz_doc.close()
+        except Exception:  # pragma: no cover
+            pass
+
+    ai_run_service.merge_summary_jsonb_sync(
+        session,
+        ai_run_id=run.id,
+        payload={"schedules_legends": dict(counters)},
+    )
+    ai_run_service.update_summary_counters_sync(
+        session,
+        ai_run_id=run.id,
+        deltas={
+            "stage_3_schedule_sheets": counters["schedule_sheets"],
+            "stage_3_schedules_extracted": counters["schedules_extracted"],
+            "stage_3_legend_sheets": counters["legend_sheets"],
+            "stage_3_legend_symbols": counters["legend_symbols_extracted"],
+            "stage_3_legend_variants": counters["legend_variants_written"],
+            "stage_3_schedule_cache_hits": counters["schedule_cache_hits"],
+            "stage_3_legend_cache_hits": counters["legend_cache_hits"],
+        },
+    )
+
+    total_sheets = counters["schedule_sheets"] + counters["legend_sheets"]
+    total_hits = counters["schedule_cache_hits"] + counters["legend_cache_hits"]
+    return {"cache_hit": total_sheets > 0 and total_hits == total_sheets}
+
+
+def _process_schedule_sheet(
+    *,
+    session: Session,
+    run: AiRun,
+    plan: Plan,
+    sheet: Sheet,
+    fitz_doc: Any,
+    plumber_doc: Any,
+    pdf_bytes: bytes,
+    model_version: str,
+    counters: dict[str, int],
+) -> None:
+    page_index = (sheet.page_number or 1) - 1
+    if page_index < 0 or page_index >= len(plumber_doc.pages):
+        return
+
+    sheet_hash = ai_cache.compute_sheet_content_hash(sheet, pdf_bytes=pdf_bytes)
+    cached = ai_cache.cache_get(
+        session,
+        org_id=run.org_id,
+        content_hash=sheet_hash,
+        stage="schedules_v1",
+        model_version=model_version,
+    )
+
+    plumber_page = plumber_doc.pages[page_index]
+    fitz_page = fitz_doc.load_page(page_index)
+    page_width = float(fitz_page.rect.width)
+    page_height = float(fitz_page.rect.height)
+
+    if cached:
+        candidates = ai_schedule_extractor.deserialize_candidates(
+            cached.get("candidates") or []
+        )
+        column_scores_serialized = cached.get("column_scores") or []
+        counters["schedule_cache_hits"] += 1
+    else:
+        vision_factory = ai_schedule_extractor.render_page_for_vision_factory(
+            fitz_page, dpi=_settings.ai_schedule_vision_dpi
+        )
+        try:
+            vision_model = ai_models.get_vision_model()
+        except Exception:
+            vision_model = None
+            logger.exception(
+                "stage_schedules_legends: vision model factory failed; heuristic-only"
+            )
+        candidates = ai_schedule_extractor.extract_schedules_for_page(
+            plumber_page=plumber_page,
+            page_width=page_width,
+            page_height=page_height,
+            vision_model=vision_model,
+            vision_image_bytes=vision_factory if vision_model else None,
+        )
+        column_scores_list: list[ai_tag_column.ColumnScores] = []
+        for candidate in candidates:
+            scores = ai_tag_column.score_columns(
+                headers=candidate.headers,
+                rows=candidate.rows,
+                db=session,
+                org_id=run.org_id,
+            )
+            column_scores_list.append(scores)
+            if scores.used_llm:
+                counters["schedule_llm_tag_tiebreaks"] += 1
+            if candidate.extraction_method == "vision":
+                counters["schedule_vision_fallbacks"] += 1
+        column_scores_serialized = [
+            {
+                "tag_column_index": s.tag_column_index,
+                "description_column_index": s.description_column_index,
+                "quantity_column_index": s.quantity_column_index,
+                "dimension_column_indexes": s.dimension_column_indexes,
+                "material_column_index": s.material_column_index,
+                "used_llm": s.used_llm,
+                "notes": s.notes,
+            }
+            for s in column_scores_list
+        ]
+        ai_cache.cache_put(
+            session,
+            org_id=run.org_id,
+            content_hash=sheet_hash,
+            stage="schedules_v1",
+            model_version=model_version,
+            value={
+                "candidates": ai_schedule_extractor.serialize_candidates(candidates),
+                "column_scores": column_scores_serialized,
+            },
+        )
+
+    if not candidates:
+        return
+    counters["schedule_sheets_with_tables"] += 1
+
+    from app.models.extracted_schedule import ExtractedSchedule
+
+    for candidate, scores_payload in zip(candidates, column_scores_serialized):
+        if not isinstance(scores_payload, dict):
+            scores_payload = {}
+        row = ExtractedSchedule(
+            org_id=run.org_id,
+            ai_run_id=run.id,
+            sheet_id=sheet.id,
+            bbox_pdf=dict(candidate.bbox_pdf),
+            tag_column_index=scores_payload.get("tag_column_index"),
+            description_column_index=scores_payload.get("description_column_index"),
+            quantity_column_index=scores_payload.get("quantity_column_index"),
+            dimension_column_indexes=scores_payload.get("dimension_column_indexes"),
+            material_column_index=scores_payload.get("material_column_index"),
+            extracted_table_jsonb=candidate.as_table_jsonb(),
+            extraction_method=candidate.extraction_method,
+        )
+        session.add(row)
+        try:
+            session.commit()
+            counters["schedules_extracted"] += 1
+        except Exception:
+            session.rollback()
+            logger.exception(
+                "stage_schedules_legends: extracted_schedules insert failed sheet=%s",
+                sheet.id,
+            )
+
+
+def _process_legend_sheet(
+    *,
+    session: Session,
+    run: AiRun,
+    plan: Plan,
+    sheet: Sheet,
+    fitz_doc: Any,
+    plumber_doc: Any,
+    pdf_bytes: bytes,
+    model_version: str,
+    counters: dict[str, int],
+) -> None:
+    page_index = (sheet.page_number or 1) - 1
+    if page_index < 0 or page_index >= len(plumber_doc.pages):
+        return
+
+    sheet_hash = ai_cache.compute_sheet_content_hash(sheet, pdf_bytes=pdf_bytes)
+    cached = ai_cache.cache_get(
+        session,
+        org_id=run.org_id,
+        content_hash=sheet_hash,
+        stage="legends_v1",
+        model_version=model_version,
+    )
+
+    plumber_page = plumber_doc.pages[page_index]
+    fitz_page = fitz_doc.load_page(page_index)
+
+    if cached:
+        counters["legend_cache_hits"] += 1
+        # Fast-path on cache hit: skip detection + rendering + uploading;
+        # write fresh DB rows pointing at the deterministic storage paths
+        # the previous run already populated.
+        persisted = ai_legend_extractor.persist_from_cached_metadata(
+            db=session,
+            cached=cached.get("persisted") or [],
+            org_id=run.org_id,
+            plan_id=plan.id,
+            sheet_id=sheet.id,
+            ai_run_id=run.id,
+        )
+    else:
+        candidates = ai_legend_detector.detect_legend_symbols(plumber_page=plumber_page)
+        if not candidates:
+            ai_cache.cache_put(
+                session,
+                org_id=run.org_id,
+                content_hash=sheet_hash,
+                stage="legends_v1",
+                model_version=model_version,
+                value={
+                    "candidates": [],
+                    "persisted": [],
+                },
+            )
+            return
+        persisted = ai_legend_extractor.persist_legend_candidates(
+            db=session,
+            fitz_page=fitz_page,
+            candidates=candidates,
+            org_id=run.org_id,
+            plan_id=plan.id,
+            sheet_id=sheet.id,
+            ai_run_id=run.id,
+        )
+        ai_cache.cache_put(
+            session,
+            org_id=run.org_id,
+            content_hash=sheet_hash,
+            stage="legends_v1",
+            model_version=model_version,
+            value={
+                "candidates": ai_legend_detector.serialize_candidates(candidates),
+                "persisted": [p.as_cached_dict() for p in persisted],
+            },
+        )
+
+
+    if persisted:
+        counters["legend_sheets_with_symbols"] += 1
+        counters["legend_symbols_extracted"] += len(persisted)
+        counters["legend_variants_written"] += sum(p.variant_count for p in persisted)
+
+
 @celery_app.task(name="ai_pipeline.stage_schedules_legends", bind=True, acks_late=True)
 def stage_schedules_legends(self, ai_run_id_str: str) -> str:
     return _run_stage(
-        ai_run_id_str=ai_run_id_str, stage="schedules_legends", body=_noop_stage
+        ai_run_id_str=ai_run_id_str,
+        stage="schedules_legends",
+        body=_stage_schedules_legends_body,
     )
 
 
@@ -742,17 +1020,9 @@ def finalize_ai_run(self, ai_run_id_str: str) -> str:
     acks_late=True,
 )
 def pipeline_prep_auto_name(self, plan_id_str: str) -> str:
-    """Run title-block auto-name before the pipeline; never raises to the chain."""
-    settings = get_settings()
-    if not settings.ai_auto_name_enabled:
-        return "prep_auto_name_skipped"
-    try:
-        reextract_plan_titles_task.run(plan_id_str, False)
-    except Exception:
-        logger.exception(
-            "pipeline_prep_auto_name: suppressed failure plan_id=%s", plan_id_str
-        )
-    return "prep_auto_name_ok"
+    """Reserved Celery task name; chain entry removed — Stage 2 owns naming."""
+    return "prep_auto_name_skipped"
+
 
 
 # ─── Public chain builder ────────────────────────────────────────────────────
@@ -761,9 +1031,7 @@ def pipeline_prep_auto_name(self, plan_id_str: str) -> str:
 def build_pipeline_chain(ai_run_id: uuid.UUID, plan_id: uuid.UUID):
     """Construct the Celery chain for an AI run.
 
-    Prep runs best-effort auto-name for ``plan_id`` before ``start_ai_run``.
-    ``start_ai_run`` uses an immutable signature (``.si()``) so it still receives
-    ``ai_run_id`` after prep returns a dummy string.
+    Order: ``start_ai_run`` (immutable) → classification → schedules/legends → … → finalize.
 
     Use ``build_pipeline_chain(run.id, run.plan_id).apply_async()`` from the API
     handler after commit. Recorded ``PIPELINE_STAGES`` / UI stage count unchanged.
@@ -771,7 +1039,6 @@ def build_pipeline_chain(ai_run_id: uuid.UUID, plan_id: uuid.UUID):
     s = str(ai_run_id)
     p = str(plan_id)
     return chain(
-        pipeline_prep_auto_name.s(p),
         start_ai_run.si(s),
         stage_classification.s(),
         stage_schedules_legends.s(),

@@ -293,16 +293,19 @@ def test_classification_counters_aggregate_correctly():
             discipline="architectural",
             sheet_type="elevation",
             confidence=0.75,
-            method="lexical",
+            method="text_llm",
         ),
     ]
-    for r in rows:
-        counters.add(r, low_threshold=0.7)
+    counters.add(rows[0], low_threshold=0.7)
+    counters.add(rows[1], low_threshold=0.7)
+    counters.add(rows[2], low_threshold=0.7, category="schedule_sheet")
 
     summary = counters.as_summary()
     assert summary["total"] == 3
-    assert summary["lexical_count"] == 2
+    assert summary["lexical_count"] == 1
     assert summary["vision_count"] == 1
+    assert summary["text_llm_count"] == 1
     assert summary["low_confidence_count"] == 1
     assert summary["by_discipline"]["architectural"] == 2
     assert summary["by_type"]["plan"] == 1
+    assert summary["by_category"]["schedule_sheet"] == 1
